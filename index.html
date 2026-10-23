@@ -351,7 +351,7 @@ function demoSite(){
    ========================================================= */
 function demoBackend(){
   let siteDoc=demoSite(), cfgDoc={groupLinks:{waec:"https://chat.whatsapp.com/sample"},mockLinks:{}}, users={}, cur=null; const cbs=[];
-  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[]};
+  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[],proofs:[]};
   users["u_student@demo.com"]={name:"Demo Student",phone:"08012345678",email:"student@demo.com"};
   db.regs.push({id:"r1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",phone:"08012345678",tutorialId:"waec",tutorialName:"WAEC",price:"15000",ref:"Paid from GTBank",receipt:DEMO_RECEIPT,status:"pending",createdAt:Date.now()-86400000,updatedAt:Date.now()-86400000});
   db.mockreqs.push({id:"q1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m1",mockName:"JAMB mock exam",status:"requested",createdAt:Date.now()-3600000,updatedAt:Date.now()-3600000});
@@ -667,8 +667,9 @@ let mockPick="", proofImg="", proofTarget=null, quizState=null;
 const studentName=()=>(profile&&profile.name)||(me&&me.name)||(me&&me.email)||"";
 async function hasPaid(){ const regs=await B.listBy("regs",me.uid); return regs.some(r=>r.status==="approved"||r.status==="completed"); }
 async function unfinishedNames(){
-  const [acts,reqs]=await Promise.all([B.listBy("mockacts",me.uid).catch(()=>[]),B.listBy("mockreqs",me.uid).catch(()=>[])]);
-  return [...acts.filter(a=>!a.proof).map(a=>a.mockName),...reqs.filter(r=>r.status==="approved"&&!r.proof).map(r=>r.mockName)];
+  const [acts,reqs,proofs]=await Promise.all([B.listBy("mockacts",me.uid).catch(()=>[]),B.listBy("mockreqs",me.uid).catch(()=>[]),B.listBy("proofs",me.uid).catch(()=>[])]);
+  const has=(coll,r)=>!!r.proof||proofs.some(x=>x.refColl===coll&&x.refId===r.id);
+  return [...acts.filter(a=>!has("mockacts",a)).map(a=>a.mockName),...reqs.filter(r=>r.status==="approved"&&!has("mockreqs",r)).map(r=>r.mockName)];
 }
 function blockedModal(names){ modal(`<h2>One more step</h2><p>Before you start another mock, upload a screenshot of your result for <b>${names.map(esc).join(", ")}</b>.</p><a class="btn red" style="width:100%" href="#dashboard" id="gDash">Go to my dashboard</a>`); }
 function paidModal(){ modal(`<h2>Tutorial payment needed</h2><p>This mock opens once your tutorial payment has been approved.</p><a class="btn red" style="width:100%" href="#tutorials" id="gDash">See tutorials</a>`); }
@@ -732,8 +733,8 @@ async function submitProof(){
   const err=$("#pErr"), go=$("#pGo"); err.textContent="";
   if(!proofImg){ err.textContent="Upload a screenshot of your result first."; return; }
   go.disabled=true;
-  try{ await B.upd(proofTarget.coll,proofTarget.id,{proof:proofImg,proofAt:Date.now(),scoreText:$("#pScore").value.trim()}); closeModal(); toast("Result uploaded. You can now take another mock."); showDash(); }
-  catch(e){ console.warn(e); err.textContent="We couldn't upload it. Try again."; go.disabled=false; }
+  try{ await B.add("proofs",{uid:me.uid,email:me.email,studentName:studentName(),refColl:proofTarget.coll,refId:proofTarget.id,proof:proofImg,scoreText:$("#pScore").value.trim(),createdAt:Date.now()}); closeModal(); toast("Result uploaded. You can now take another mock."); showDash(); }
+  catch(e){ console.warn(e); err.textContent="We couldn't upload it ("+(e.code||e.message||"unknown error")+"). Try again."; go.disabled=false; }
 }
 
 /* online quizzes */
@@ -794,11 +795,12 @@ async function showDash(){
   const box=$("#viewDash");
   if(!me){ box.innerHTML=`<div class="wrap pad"><h1 class="h1">Your dashboard</h1><p class="mute" style="max-width:520px">Log in to see your tutorials, group links, mock exams and history.</p><button class="btn red" id="dLogin">Log in or create an account</button></div>`; $("#dLogin").onclick=()=>openAuth(()=>showDash()); return; }
   box.innerHTML=`<div class="wrap pad"><p class="mute">Loading your dashboard...</p></div>`;
-  let regs=[],reqs=[],acts=[],subs=[];
+  let regs=[],reqs=[],acts=[],subs=[],proofs=[];
   const safe=p=>p.catch(e=>{ console.warn(e); return []; });
   try{ regs=await B.listBy("regs",me.uid); }
   catch(e){ console.warn(e); box.innerHTML=`<div class="wrap pad"><h1 class="h1">Your dashboard</h1><p class="err">We couldn't load your records. Check your connection and refresh.</p></div>`; return; }
-  [reqs,acts,subs]=await Promise.all([safe(B.listBy("mockreqs",me.uid)),safe(B.listBy("mockacts",me.uid)),safe(B.listBy("quizsubs",me.uid))]);
+  [reqs,acts,subs,proofs]=await Promise.all([safe(B.listBy("mockreqs",me.uid)),safe(B.listBy("mockacts",me.uid)),safe(B.listBy("quizsubs",me.uid)),safe(B.listBy("proofs",me.uid))]);
+  const pOf=(coll,r)=>proofs.find(x=>x.refColl===coll&&x.refId===r.id)||(r.proof?{proof:r.proof,scoreText:r.scoreText}:null);
   const keys={}; await Promise.all(subs.map(async x=>{ try{ keys[x.mockId]=await B.get("quizkeys",x.mockId); }catch(e){ keys[x.mockId]=null; } }));
   regs.sort((a,b)=>b.createdAt-a.createdAt);
   const name=(profile&&profile.name)||me.name||me.email;
@@ -808,24 +810,24 @@ async function showDash(){
     ...acts.map(a=>({t:"open",ts:a.openedAt,r:a})),
     ...subs.map(x=>({t:"quiz",ts:x.submittedAt,r:x}))
   ].sort((a,b)=>b.ts-a.ts);
-  const waiting=acts.filter(a=>!a.proof).length+reqs.filter(r=>r.status==="approved"&&!r.proof).length;
+  const waiting=acts.filter(a=>!pOf("mockacts",a)).length+reqs.filter(r=>r.status==="approved"&&!pOf("mockreqs",r)).length;
   const hist=[]; regs.forEach(r=>{ hist.push({ts:r.createdAt,t:`Registered for ${r.tutorialName}`,s:r.status==="completed"?"approved":r.status});
       if(r.status==="completed") hist.push({ts:r.updatedAt||r.createdAt,t:`Took part in ${r.tutorialName}`,s:"completed"}); });
     reqs.forEach(r=>hist.push({ts:r.createdAt,t:`Requested ${r.mockName}`,s:r.status}));
-    acts.forEach(a=>hist.push({ts:a.openedAt,t:`Opened ${a.mockName}`,s:a.proof?"completed":"pending"}));
+    acts.forEach(a=>hist.push({ts:a.openedAt,t:`Opened ${a.mockName}`,s:pOf("mockacts",a)?"completed":"pending"}));
     subs.forEach(x=>hist.push({ts:x.submittedAt,t:`Took the quiz ${x.mockName}`,s:"completed"}));
   hist.sort((a,b)=>b.ts-a.ts);
-  const proofBlock=(coll,r)=>r.proof?`${safeImg(r.proof)?`<img class="rthumb zoom" src="${esc(r.proof)}" alt="Your result (tap to enlarge)">`:""}${r.scoreText?`<span>Score: <b>${esc(r.scoreText)}</b></span>`:""}`:`<button class="btn red sm" data-proof="${coll}:${esc(r.id)}">Upload result screenshot</button>`;
+  const proofBlock=(coll,r)=>{ const q=pOf(coll,r); return q?`${safeImg(q.proof)?`<img class="rthumb zoom" src="${esc(q.proof)}" alt="Your result (tap to enlarge)">`:""}${q.scoreText?`<span>Score: <b>${esc(q.scoreText)}</b></span>`:""}`:`<button class="btn red sm" data-proof="${coll}:${esc(r.id)}">Upload result screenshot</button>`; };
   const mockCard=m=>{
     const r=m.r;
     if(m.t==="quiz"){ const sc=scoreOf(r); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Online quiz, taken ${fmtDate(r.submittedAt)}</div></div><span class="st completed">${sc?sc.c+"/"+sc.n+" ("+sc.pct+"%)":"Marked soon"}</span></div>
       <div class="acts"><button class="btn ghost sm" data-review="${esc(r.mockId)}">See my answers</button></div></div>`; }
-    if(m.t==="open"){ const mk=site.mocks.find(x=>x.id===r.mockId), lk=safeUrl(mk&&mk.link); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Open mock, opened ${fmtDate(r.openedAt)}</div></div><span class="st ${r.proof?"completed":"pending"}">${r.proof?"Result uploaded":"Waiting for your result"}</span></div>
-      <div class="acts">${lk&&!r.proof?`<a class="btn ghost sm" href="${esc(lk)}" target="_blank" rel="noopener">Open mock again</a>`:""}${proofBlock("mockacts",r)}</div></div>`; }
+    if(m.t==="open"){ const mk=site.mocks.find(x=>x.id===r.mockId), lk=safeUrl(mk&&mk.link); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Open mock, opened ${fmtDate(r.openedAt)}</div></div><span class="st ${pOf("mockacts",r)?"completed":"pending"}">${pOf("mockacts",r)?"Result uploaded":"Waiting for your result"}</span></div>
+      <div class="acts">${lk&&!pOf("mockacts",r)?`<a class="btn ghost sm" href="${esc(lk)}" target="_blank" rel="noopener">Open mock again</a>`:""}${proofBlock("mockacts",r)}</div></div>`; }
     const lk=safeUrl(r.link);
     return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Request-only mock, requested ${fmtDate(r.createdAt)}</div></div><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
       ${r.note?`<div class="note">Message from Xenith: ${esc(r.note)}</div>`:""}
-      ${r.status==="approved"?`<div class="acts">${lk&&!r.proof?`<a class="btn red" href="${esc(lk)}" target="_blank" rel="noopener">Open your mock exam</a>`:""}${proofBlock("mockreqs",r)}</div>`:""}
+      ${r.status==="approved"?`<div class="acts">${lk&&!pOf("mockreqs",r)?`<a class="btn red" href="${esc(lk)}" target="_blank" rel="noopener">Open your mock exam</a>`:""}${proofBlock("mockreqs",r)}</div>`:""}
       ${r.status==="requested"?`<div class="acts"><span class="mute">We'll approve this and send your link here.</span></div>`:""}</div>`;
   };
   box.innerHTML=`<div class="wrap pad">
@@ -855,7 +857,7 @@ async function reupload(id,file){
 /* =========================================================
    ADMIN
    ========================================================= */
-let aActs=[], aSubs=[], aKeys={}, aQz={}, resFilter="all", resQ="", qbSel="", qbData={};
+let aProofs=[], aActs=[], aSubs=[], aKeys={}, aQz={}, resFilter="all", resQ="", qbSel="", qbData={};
 let aTab="receipts", aRegs=[], aReqs=[], rFilter="pending", rQ="", qFilter="requested";
 const CONTENT_TABS=["quiz","brand","team","tutorials","accounts","mocks","contacts","settings","design"];
 const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",results:"Results",quiz:"Quiz builder",brand:"Brand",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings",design:"Fonts"};
@@ -879,6 +881,7 @@ async function loadAdminLists(){
   aReqs=await grab("mockreqs","Mock requests");
   aActs=await grab("mockacts","Open mock activity","Publish the latest Firestore rules. ");
   aSubs=await grab("quizsubs","Quiz results","Publish the latest Firestore rules. ");
+  aProofs=await grab("proofs","Result screenshots","Publish the latest Firestore rules. ");
   aKeys={}; aQz={};
   for(const m of site.mocks.filter(x=>kindOf(x)==="quiz")){
     try{ aKeys[m.id]=await B.get("quizkeys",m.id); }catch(e){ console.warn(e); }
@@ -977,14 +980,14 @@ async function mockAction(act,id){
 /* ---- content editing ---- */
 /* ---- results: who took what, and how they did ---- */
 function resultRows(){
-  const rows=[];
+  const rows=[], pf=(coll,x)=>aProofs.find(y=>y.refColl===coll&&y.refId===x.id)||(x.proof?{proof:x.proof,scoreText:x.scoreText}:{});
   aSubs.forEach(x=>{
     const key=(aKeys[x.mockId]||{}).answers||[], total=key.length||x.count||(x.answers||[]).length;
     const c=key.length?(x.answers||[]).filter((a,i)=>a===key[i]).length:null, pct=c==null||!total?null:Math.round(c/total*100);
     rows.push({kind:"quiz",coll:"quizsubs",id:x.id,name:x.studentName,email:x.email,mock:x.mockName,ts:x.submittedAt,pct,perf:c==null?"Answer key not set":`${c}/${total} (${pct}%)`});
   });
-  aActs.forEach(a=>rows.push({kind:"open",coll:"mockacts",id:a.id,name:a.studentName,email:a.email,mock:a.mockName,ts:a.openedAt,proof:a.proof,scoreText:a.scoreText}));
-  aReqs.filter(r=>r.status==="approved").forEach(r=>rows.push({kind:"locked",coll:"mockreqs",id:r.id,name:r.studentName,email:r.email,mock:r.mockName,ts:r.updatedAt||r.createdAt,proof:r.proof,scoreText:r.scoreText}));
+  aActs.forEach(a=>rows.push({kind:"open",coll:"mockacts",id:a.id,name:a.studentName,email:a.email,mock:a.mockName,ts:a.openedAt,proof:pf("mockacts",a).proof,scoreText:pf("mockacts",a).scoreText}));
+  aReqs.filter(r=>r.status==="approved").forEach(r=>rows.push({kind:"locked",coll:"mockreqs",id:r.id,name:r.studentName,email:r.email,mock:r.mockName,ts:r.updatedAt||r.createdAt,proof:pf("mockreqs",r).proof,scoreText:pf("mockreqs",r).scoreText}));
   return rows.sort((a,b)=>(b.ts||0)-(a.ts||0));
 }
 function resultsPanel(){
@@ -1157,7 +1160,7 @@ function bindAdmin(){
     const b=e.target.closest("button"); if(!b) return; const d=b.dataset;
     if(d.refresh){ await refreshAdmin(true); }
     else if(d.rsf){ resFilter=d.rsf; renderAdmin(); }
-    else if(d.rdel){ const k=d.rdel.indexOf(":"), coll=d.rdel.slice(0,k), id=d.rdel.slice(k+1); if(confirm("Delete this entry?")){ await B.del(coll,id); await loadAdminLists(); renderAdmin(); toast("Deleted."); } }
+    else if(d.rdel){ const k=d.rdel.indexOf(":"), coll=d.rdel.slice(0,k), id=d.rdel.slice(k+1); if(confirm("Delete this entry?")){ await B.del(coll,id); for(const q of aProofs.filter(q=>q.refColl===coll&&q.refId===id)){ try{ await B.del("proofs",q.id); }catch(e){} } await loadAdminLists(); renderAdmin(); toast("Deleted."); } }
     else if(d.qb){ qbSel=d.qb; aTab="quiz"; renderAdmin(); }
     else if(d.qimport){ const qd=qbData[qbSel], items=parseQuestions(($("#qbPaste")||{}).value||""); if(!items.length) toast("No questions found. Check the format."); else { qd.questions.push(...items); qd.dirty=true; markDirty(); renderAdmin(); toast(items.length+" question"+(items.length>1?"s":"")+" added."); } }
     else if(d.qadd){ const qd=qbData[qbSel]; qd.questions.push({q:"",options:["","","",""],correct:-1}); qd.dirty=true; markDirty(); renderAdmin(); }
