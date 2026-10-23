@@ -85,6 +85,16 @@ section.s.alt{background:var(--mist)}
 .steps li:before{content:counter(s);position:absolute;left:14px;top:12px;width:30px;height:30px;border-radius:50%;background:var(--navy);color:#fff;display:grid;place-items:center;font-family:var(--serif);font-size:18px}
 .steps small{display:block;font-weight:400;color:var(--mute)}
 
+/* carousel (team) */
+section.s,.hero{font-family:var(--sans)}
+.cwrap{position:relative}
+.ctrack{display:flex;gap:16px;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;padding:4px 2px 10px;-webkit-overflow-scrolling:touch}
+.ctrack::-webkit-scrollbar{display:none}
+.ctrack .pcard{flex:0 0 min(72vw,250px);scroll-snap-align:start}
+.cnav{position:absolute;top:34%;z-index:3;width:40px;height:40px;border-radius:50%;border:0;background:#fff;color:var(--navy);font-size:20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,23,55,.28)}
+.cnav.l{left:-8px}.cnav.r{right:-8px}
+.fprev{font-size:20px;margin-top:6px;color:var(--navy)}
+@media(max-width:560px){.cnav{display:none}}
 /* team */
 .pcard{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .pphoto{aspect-ratio:1/1;background:var(--mist);display:grid;place-items:center;font-family:var(--serif);font-size:56px;color:var(--navy)}
@@ -142,6 +152,26 @@ footer a{color:#fff}
 .tl li:before{content:"";position:absolute;left:-25px;top:6px;width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid var(--navy)}
 .tl .d{font-size:14px;color:var(--mute)}
 
+/* mocks and quizzes */
+.mgroup{margin-top:34px}
+.mgroup>h3{font-size:30px}
+.mgroup>p{margin:4px 0 16px}
+.kbadge{align-self:flex-start;border:1.5px solid var(--navy);color:var(--navy);border-radius:99px;padding:0 11px;font-size:13px;font-weight:700}
+.mbox.wide{max-width:760px}
+.qprog{position:sticky;top:-24px;background:#fff;padding:8px 0;font-weight:700;color:var(--navy);border-bottom:1px solid var(--line);margin:10px 0 4px;z-index:2}
+.qq{border:1px solid var(--line);border-radius:10px;margin:14px 0 0;padding:10px 14px 12px}
+.qq legend{font-weight:700;padding:0 6px;color:var(--ink)}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:8px;cursor:pointer}
+.opt:hover{background:var(--mist)}
+.opt input{margin-top:5px}
+.qres{display:flex;align-items:baseline;gap:14px;margin:6px 0 14px}
+.qres b{font-family:var(--serif);font-size:56px;color:var(--navy);line-height:1}
+.qres span{font-size:24px;font-weight:700;color:var(--red)}
+.qrev{border-left:5px solid var(--line);background:var(--mist);border-radius:8px;padding:10px 14px;margin-top:10px;font-size:16px}
+.qrev.ok{border-left-color:var(--ok)}.qrev.bad{border-left-color:var(--red)}
+.qrev .qt{font-weight:700;margin-bottom:4px}
+.orow{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.orow .in{flex:1}
 /* ---------- modal, forms, toast ---------- */
 #modal{position:fixed;inset:0;background:rgba(0,23,55,.66);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:20px 14px;overflow-y:auto}
 #modal.on{display:flex}
@@ -276,9 +306,13 @@ const safeImg = u => /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(String(u|
 const clean = o => JSON.parse(JSON.stringify(o));
 const uid8 = () => Math.random().toString(36).slice(2,9);
 const fmtDate = ts => ts?new Date(ts).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"";
+const KIND_LABEL={open:"Open mock",locked:"Request-only mock",quiz:"Online quiz"};
 const STATUS = {pending:"Waiting for approval",approved:"Approved",rejected:"Rejected",completed:"Completed",requested:"Requested"};
 
+let carTimers=[];
 let B=null, site=null, cfg=null, me=null, isAdmin=false, profile=null, view=null;
+const kindOf = m => ["open","locked","quiz"].includes(m&&m.kind)?m.kind:"locked";
+const needPaid = m => m.paidOnly!==undefined?!!m.paidOnly:(kindOf(m)==="locked"&&!!site.settings.mockNeedsPayment);
 const money = n => { if(n===""||n==null||isNaN(Number(n))) return ""; return (site.settings.currency||"₦")+Number(n).toLocaleString("en-NG"); };
 
 /* ---------- default content ---------- */
@@ -299,6 +333,7 @@ function normalizeSite(s){
   const d=defaultSite(); s=s||d;
   s.brand=Object.assign(d.brand,s.brand||{}); s.settings=Object.assign(d.settings,s.settings||{});
   ["team","tutorials","accounts","mocks","contacts"].forEach(k=>{ if(!Array.isArray(s[k])) s[k]=d[k]; });
+  s.fonts=Object.assign({heading:"",body:"",sec:{}},s.fonts||{}); s.fonts.sec=s.fonts.sec||{};
   return s;
 }
 function demoSite(){
@@ -306,7 +341,7 @@ function demoSite(){
   s.team=[{name:"Mr. Adewale Johnson",role:"Lead tutor, Mathematics",bio:"Ten years of helping students pass with confidence.",photo:""},{name:"Mrs. Ngozi Eze",role:"English and Literature",bio:"Makes every lesson clear and practical.",photo:""}];
   s.accounts=[{id:"a1",bank:"Sample Bank",accountName:"Xenith Academy",accountNumber:"0123456789",note:"Use your full name as the payment reference."}];
   s.tutorials.forEach((t,i)=>{ if(i<3){ t.price=String(15000+i*5000); t.schedule="Mon, Wed and Fri, 5pm"; t.accountId="a1"; } });
-  s.mocks=[{id:"m1",name:"JAMB mock exam",description:"Full practice test under exam conditions."},{id:"m2",name:"WAEC mock exam",description:"Timed practice across core subjects."}];
+  s.mocks=[{id:"m1",name:"JAMB mock exam",description:"Full practice test under exam conditions.",kind:"locked",paidOnly:false},{id:"m2",name:"WAEC practice test",description:"Timed practice across core subjects.",kind:"open",link:"https://example.com/waec-practice",paidOnly:false},{id:"m3",name:"Quick Maths Quiz",description:"Three questions, marked instantly.",kind:"quiz",paidOnly:false}];
   s.contacts=[{label:"Email",url:"mailto:hello@example.com",text:"hello@example.com"}];
   return s;
 }
@@ -316,10 +351,14 @@ function demoSite(){
    ========================================================= */
 function demoBackend(){
   let siteDoc=demoSite(), cfgDoc={groupLinks:{waec:"https://chat.whatsapp.com/sample"},mockLinks:{}}, users={}, cur=null; const cbs=[];
-  const db={regs:[],mockreqs:[]};
+  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[]};
   users["u_student@demo.com"]={name:"Demo Student",phone:"08012345678",email:"student@demo.com"};
   db.regs.push({id:"r1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",phone:"08012345678",tutorialId:"waec",tutorialName:"WAEC",price:"15000",ref:"Paid from GTBank",receipt:DEMO_RECEIPT,status:"pending",createdAt:Date.now()-86400000,updatedAt:Date.now()-86400000});
   db.mockreqs.push({id:"q1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m1",mockName:"JAMB mock exam",status:"requested",createdAt:Date.now()-3600000,updatedAt:Date.now()-3600000});
+  db.quizzes.push({id:"m3",questions:[{q:"What is 7 x 8?",options:["54","56","58","64"]},{q:"Solve 2x + 6 = 14. What is x?",options:["2","3","4","5"]},{q:"What is 15% of 200?",options:["15","20","30","45"]}]});
+  db.quizkeys.push({id:"m3",answers:[1,2,2]});
+  db.quizsubs.push({id:"u_student@demo.com_m3",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m3",mockName:"Quick Maths Quiz",answers:[1,0,2],count:3,submittedAt:Date.now()-7200000});
+  db.mockacts.push({id:"a1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m2",mockName:"WAEC practice test",kind:"open",openedAt:Date.now()-9000000,proof:DEMO_RECEIPT,proofAt:Date.now()-8500000,scoreText:"68/100"});
   const fire=()=>cbs.forEach(f=>f(cur?{...cur}:null));
   return {
     mode:"demo",
@@ -333,7 +372,9 @@ function demoBackend(){
     async listBy(c,uid){ return clean(db[c].filter(x=>x.uid===uid)); }, async listAll(c){ return clean(db[c]); },
     async add(c,o){ const id="d"+uid8(); db[c].push({...clean(o),id}); return id; },
     async upd(c,id,p){ Object.assign(db[c].find(x=>x.id===id),clean(p)); },
-    async del(c,id){ db[c]=db[c].filter(x=>x.id!==id); }
+    async del(c,id){ db[c]=db[c].filter(x=>x.id!==id); },
+    async get(c,id){ const r=db[c].find(x=>x.id===id); return r?clean(r):null; },
+    async set(c,id,o){ const i=db[c].findIndex(x=>x.id===id); const v={...clean(o),id}; if(i>=0) db[c][i]=v; else db[c].push(v); }
   };
 }
 async function firebaseBackend(){
@@ -364,13 +405,15 @@ async function firebaseBackend(){
     async listAll(c){ return rows(await fs.getDocs(fs.collection(db,c))); },
     async add(c,o){ return (await fs.addDoc(fs.collection(db,c),clean(o))).id; },
     upd:(c,id,p)=>fs.updateDoc(fs.doc(db,c,id),clean(p)),
-    del:(c,id)=>fs.deleteDoc(fs.doc(db,c,id))
+    del:(c,id)=>fs.deleteDoc(fs.doc(db,c,id)),
+    async get(c,id){ const sn=await fs.getDoc(fs.doc(db,c,id)); return sn.exists()?sn.data():null; },
+    set:(c,id,o)=>fs.setDoc(fs.doc(db,c,id),clean(o))
   };
 }
 
 /* ---------- small UI helpers ---------- */
 let tt; function toast(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove("on"),4200); }
-function modal(html){ $("#mbody").innerHTML=html; $("#modal").classList.add("on"); document.body.classList.add("lock"); }
+function modal(html,wide){ $("#mbody").innerHTML=html; $("#modal .mbox").classList.toggle("wide",!!wide); $("#modal").classList.add("on"); document.body.classList.add("lock"); }
 function closeModal(){ $("#modal").classList.remove("on"); $("#mbody").innerHTML=""; document.body.classList.remove("lock"); }
 function authMsg(e){
   const c=(e&&e.code)||"";
@@ -399,6 +442,39 @@ function resizeImage(file,mode){
   });
 }
 
+/* ---------- fonts (free Google Fonts) and design ---------- */
+const FONTS={"Cormorant Garamond":"500;600;700","Source Sans 3":"400;600;700","Playfair Display":"400;600;700;800","Montserrat":"400;600;700;800","Poppins":"400;600;700;800","Inter":"400;600;700;800","Lora":"400;600;700","Merriweather":"400;700","Raleway":"400;600;700;800","Nunito":"400;600;700;800","DM Sans":"400;600;700","Roboto Slab":"400;600;700;800","Oswald":"400;600;700","Space Grotesk":"400;500;600;700","Outfit":"400;600;700;800","Sora":"400;600;700;800","Manrope":"400;600;700;800","Bebas Neue":"","Pacifico":"","Archivo Black":""};
+const DSECS=[["home","Home banner"],["about","About"],["team","Team"],["tutorials","Tutorials"],["mocks","Mock exams"],["contact","Contact"]];
+const fontsLoaded=new Set();
+function loadFonts(names){
+  names.forEach(n=>{ if(!n||!(n in FONTS)||fontsLoaded.has(n)) return; fontsLoaded.add(n);
+    const w=FONTS[n], l=document.createElement("link"); l.rel="stylesheet";
+    l.href="https://fonts.googleapis.com/css2?family="+n.replace(/ /g,"+")+(w?":wght@"+w:"")+"&display=swap"; document.head.appendChild(l); });
+}
+const fam=n=>`'${n}',Georgia,system-ui,sans-serif`;
+function applyDesign(){
+  if(!site) return;
+  const f=site.fonts||{}, sec=f.sec||{}, rs=document.documentElement.style;
+  loadFonts([f.heading,f.body,...Object.values(sec)].filter(Boolean));
+  if(f.heading) rs.setProperty("--serif",fam(f.heading)); else rs.removeProperty("--serif");
+  if(f.body) rs.setProperty("--sans",fam(f.body)); else rs.removeProperty("--sans");
+  DSECS.forEach(([k])=>{ const el=document.getElementById(k); if(!el) return;
+    if(sec[k]&&(sec[k] in FONTS)){ el.style.setProperty("--serif",fam(sec[k])); el.style.setProperty("--sans",fam(sec[k])); }
+    else { el.style.removeProperty("--serif"); el.style.removeProperty("--sans"); } });
+}
+/* sliding carousel for the team: swipe, arrows, auto-advance */
+function startCarousels(){
+  const box=$("#teamBox"); if(!box) return;
+  const tr=box.querySelector(".ctrack"); let pause=0;
+  const stepW=()=>{ const c=tr.querySelector(".pcard"); return c?c.offsetWidth+16:260; };
+  const next=()=>{ if(tr.scrollWidth<=tr.clientWidth+4) return; const end=tr.scrollLeft+tr.clientWidth>=tr.scrollWidth-4; tr.scrollTo({left:end?0:tr.scrollLeft+stepW(),behavior:"smooth"}); };
+  box.querySelector(".cnav.l").onclick=()=>{ pause=Date.now()+8000; tr.scrollTo({left:Math.max(0,tr.scrollLeft-stepW()),behavior:"smooth"}); };
+  box.querySelector(".cnav.r").onclick=()=>{ pause=Date.now()+8000; next(); };
+  ["touchstart","mousedown","wheel"].forEach(ev=>tr.addEventListener(ev,()=>{pause=Date.now()+8000},{passive:true}));
+  tr.addEventListener("mouseenter",()=>{pause=Date.now()+8000});
+  carTimers.push(setInterval(()=>{ if(Date.now()>=pause&&view==="home") next(); },3500));
+}
+
 /* =========================================================
    HEADER, TICKER, FOOTER
    ========================================================= */
@@ -425,6 +501,7 @@ function updateAuthBtn(){
    HOME
    ========================================================= */
 function renderHome(){
+  carTimers.forEach(clearInterval); carTimers=[];
   const b=site.brand, s=site.settings;
   const paras=String(b.about||"").split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
   let pullN=0; for(let i=paras.length-1;i>=0&&paras[i].length<110&&pullN<2&&paras.length-pullN>1;i--) pullN++;
@@ -432,8 +509,16 @@ function renderHome(){
   const exams=[...new Set(site.tutorials.map(t=>t.name).filter(Boolean))];
   const acct=id=>site.accounts.find(a=>a.id===id);
   const wa=safeUrl(s.whatsapp);
+  const mkG={open:[],locked:[],quiz:[]}; site.mocks.forEach(m=>mkG[kindOf(m)].push(m));
+  const mgroup=(title,desc,list,btn,attr)=>list.length?`<div class="mgroup"><h3>${title}</h3><p class="mute">${desc}</p><div class="grid">${list.map(m=>`
+      <article class="tcard"><span class="kbadge">${KIND_LABEL[kindOf(m)]}</span><h3>${esc(m.name)}</h3>${m.description?`<p class="desc">${esc(m.description)}</p>`:""}
+      <button class="btn red" ${attr}="${esc(m.id)}">${btn}</button></article>`).join("")}</div></div>`:"";
+  const mocksHTML=(mgroup("Open mocks","Take these right away. Log in, open the link, then upload a screenshot of your result.",mkG.open,"Open mock","data-mopen")
+    +mgroup("Request-only mocks","Request access and we'll approve it and send the link to your dashboard.",mkG.locked,"Request access","data-mock")
+    +mgroup("Online quizzes","Take the quiz here. You're marked automatically when you submit, and you'll see the correct answers after.",mkG.quiz,"Start quiz","data-quiz"))
+    ||`<div class="empty">Mock exams will be listed here soon.</div>`;
   $("#viewHome").innerHTML=`
-  <section class="hero"><div class="wrap">
+  <section class="hero" id="home"><div class="wrap">
     <h1>${esc(b.heroTitle)}</h1>
     <p>${esc(b.tagline)}</p>
     <div class="acts"><a class="btn red" href="#tutorials">Register for a tutorial</a><a class="btn light" href="#mocks">Request a mock exam</a></div>
@@ -448,9 +533,9 @@ function renderHome(){
 
   <section class="s alt" id="team"><div class="wrap">
     <div class="sh"><h2>Meet the team</h2><p>The mentors who will teach you.</p></div>
-    <div class="grid">${site.team.length?site.team.map(m=>`
+    ${site.team.length?`<div class="cwrap" id="teamBox"><button class="cnav l" aria-label="Previous">‹</button><div class="ctrack">${site.team.map(m=>`
       <article class="pcard"><div class="pphoto">${safeImg(m.photo)?`<img src="${esc(m.photo)}" alt="">`:esc((m.name||"?")[0].toUpperCase())}</div>
-      <div class="pbody"><h3>${esc(m.name)}</h3>${m.role?`<div class="role">${esc(m.role)}</div>`:""}${m.bio?`<p>${esc(m.bio)}</p>`:""}</div></article>`).join(""):`<div class="empty">Our team will be introduced here soon.</div>`}</div>
+      <div class="pbody"><h3>${esc(m.name)}</h3>${m.role?`<div class="role">${esc(m.role)}</div>`:""}${m.bio?`<p>${esc(m.bio)}</p>`:""}</div></article>`).join("")}</div><button class="cnav r" aria-label="Next">›</button></div>`:`<div class="empty">Our team will be introduced here soon.</div>`}
   </div></section>
 
   <section class="s" id="tutorials"><div class="wrap">
@@ -471,10 +556,8 @@ function renderHome(){
   </div></section>
 
   <section class="s alt" id="mocks"><div class="wrap">
-    <div class="sh"><h2>Mock exams</h2><p>Request a mock exam link. We'll approve your request and send the link to your dashboard.</p></div>
-    <div class="grid">${site.mocks.length?site.mocks.map(m=>`
-      <article class="tcard"><h3>${esc(m.name)}</h3>${m.description?`<p class="desc">${esc(m.description)}</p>`:""}
-      <button class="btn red" data-mock="${esc(m.id)}">Request link</button></article>`).join(""):`<div class="empty">Mock exams will be listed here soon.</div>`}</div>
+    <div class="sh"><h2>Mock exams</h2><p>Practise like it's the real exam. After each mock, upload your result so you can move on to the next one.</p></div>
+    ${mocksHTML}
   </div></section>
 
   <section class="s" id="contact"><div class="wrap">
@@ -483,6 +566,8 @@ function renderHome(){
       ${wa?`<a href="${esc(wa)}" target="_blank" rel="noopener"><small>WhatsApp</small><b>Chat with us</b></a>`:""}</div>
     ${!site.contacts.length&&!wa?`<div class="empty">Contact details will appear here.</div>`:""}
   </div></section>`;
+
+  startCarousels(); applyDesign();
 }
 
 /* =========================================================
@@ -576,16 +661,28 @@ async function submitReg(){
 }
 
 /* =========================================================
-   REQUEST A MOCK EXAM
+   MOCK EXAMS: open links, request-only links, online quizzes
    ========================================================= */
-let mockPick="";
+let mockPick="", proofImg="", proofTarget=null, quizState=null;
+const studentName=()=>(profile&&profile.name)||(me&&me.name)||(me&&me.email)||"";
+async function hasPaid(){ const regs=await B.listBy("regs",me.uid); return regs.some(r=>r.status==="approved"||r.status==="completed"); }
+async function unfinishedNames(){
+  const [acts,reqs]=await Promise.all([B.listBy("mockacts",me.uid).catch(()=>[]),B.listBy("mockreqs",me.uid).catch(()=>[])]);
+  return [...acts.filter(a=>!a.proof).map(a=>a.mockName),...reqs.filter(r=>r.status==="approved"&&!r.proof).map(r=>r.mockName)];
+}
+function blockedModal(names){ modal(`<h2>One more step</h2><p>Before you start another mock, upload a screenshot of your result for <b>${names.map(esc).join(", ")}</b>.</p><a class="btn red" style="width:100%" href="#dashboard" id="gDash">Go to my dashboard</a>`); }
+function paidModal(){ modal(`<h2>Tutorial payment needed</h2><p>This mock opens once your tutorial payment has been approved.</p><a class="btn red" style="width:100%" href="#tutorials" id="gDash">See tutorials</a>`); }
+function studentOnly(){ if(isAdmin){ toast("You're logged in as admin. Use a student account to take mocks."); return false; } return true; }
+
+/* request-only mocks */
 async function openMock(mid){
   if(!me) return openAuth(()=>openMock(mid));
-  if(isAdmin){ toast("You're logged in as admin. Use a student account to request a mock."); return; }
-  if(!site.mocks.length) return toast("No mock exams are available yet.");
+  if(!studentOnly()) return;
+  const list=site.mocks.filter(m=>kindOf(m)==="locked");
+  if(!list.length) return toast("No request-only mocks are available yet.");
   mockPick=mid||"";
-  modal(`<h2>Request a mock exam</h2><p class="hint" style="margin:0">Pick a mock exam. We'll approve your request and the link will appear on your dashboard.</p>
-    <div id="mList">${site.mocks.map(m=>`<label class="mopt${m.id===mockPick?" on":""}"><input type="radio" name="mk" value="${esc(m.id)}"${m.id===mockPick?" checked":""}><b>${esc(m.name)}</b>${m.description?`<div class="hint">${esc(m.description)}</div>`:""}</label>`).join("")}</div>
+  modal(`<h2>Request access</h2><p class="hint" style="margin:0">Pick a mock exam. We'll approve your request and the link will appear on your dashboard.</p>
+    <div id="mList">${list.map(m=>`<label class="mopt${m.id===mockPick?" on":""}"><input type="radio" name="mk" value="${esc(m.id)}"${m.id===mockPick?" checked":""}><b>${esc(m.name)}</b>${m.description?`<div class="hint">${esc(m.description)}</div>`:""}</label>`).join("")}</div>
     <div class="err" id="mErr"></div><button class="btn red" style="width:100%;margin-top:8px" id="mGo">Send request</button>`);
 }
 async function submitMock(){
@@ -593,36 +690,147 @@ async function submitMock(){
   if(!mockPick){ err.textContent="Choose a mock exam first."; return; }
   const m=site.mocks.find(x=>x.id===mockPick); go.disabled=true;
   try{
-    const [regs,reqs]=await Promise.all([B.listBy("regs",me.uid),B.listBy("mockreqs",me.uid)]);
-    if(site.settings.mockNeedsPayment && !regs.some(r=>r.status==="approved"||r.status==="completed")){
-      err.textContent="Mock exams open once your tutorial payment is approved. Register for a tutorial first."; go.disabled=false; return; }
+    if(needPaid(m)&&!(await hasPaid())){ err.textContent="This mock opens once your tutorial payment is approved. Register for a tutorial first."; go.disabled=false; return; }
+    const reqs=await B.listBy("mockreqs",me.uid);
     if(reqs.some(r=>r.mockId===m.id&&r.status==="requested")){ err.textContent="You already requested this mock exam. We'll approve it soon."; go.disabled=false; return; }
-    await B.add("mockreqs",{uid:me.uid,email:me.email,studentName:(profile&&profile.name)||me.name||me.email,mockId:m.id,mockName:m.name,status:"requested",createdAt:Date.now(),updatedAt:Date.now()});
+    const names=await unfinishedNames(); if(names.length){ closeModal(); blockedModal(names); return; }
+    await B.add("mockreqs",{uid:me.uid,email:me.email,studentName:studentName(),mockId:m.id,mockName:m.name,status:"requested",createdAt:Date.now(),updatedAt:Date.now()});
     closeModal(); toast("Request sent. Your link will appear on your dashboard once approved.");
     if(location.hash==="#dashboard") showDash(); else location.hash="#dashboard";
   }catch(e){ console.warn(e); err.textContent="We couldn't send your request. Try again."; go.disabled=false; }
 }
 
+/* open-link mocks */
+async function openOpenMock(mid){
+  if(!me) return openAuth(()=>openOpenMock(mid));
+  if(!studentOnly()) return;
+  const m=site.mocks.find(x=>x.id===mid); if(!m) return;
+  const link=safeUrl(m.link); if(!link){ toast("This mock's link isn't ready yet. Please check back soon."); return; }
+  try{
+    if(needPaid(m)&&!(await hasPaid())) return paidModal();
+    const acts=await B.listBy("mockacts",me.uid), same=acts.find(a=>a.mockId===m.id&&!a.proof);
+    if(!same){
+      const names=await unfinishedNames(); if(names.length) return blockedModal(names);
+      await B.add("mockacts",{uid:me.uid,email:me.email,studentName:studentName(),mockId:m.id,mockName:m.name,kind:"open",openedAt:Date.now()});
+    }
+    modal(`<h2>${esc(m.name)}</h2><p>Open the mock below. When you finish, come back and upload a screenshot of your result on your dashboard. You can't start another mock until you do.</p>
+      <a class="btn red" style="width:100%;margin-bottom:10px" href="${esc(link)}" target="_blank" rel="noopener">Open mock</a>
+      <a class="btn ghost" style="width:100%" href="#dashboard" id="gDash">Go to my dashboard</a>`);
+  }catch(e){ console.warn(e); toast("We couldn't open the mock. Check your connection and try again."); }
+}
+
+/* result screenshot (open and request-only mocks) */
+function openProof(coll,id){
+  proofImg=""; proofTarget={coll,id};
+  modal(`<h2>Upload your result</h2><p class="hint" style="margin:0">Upload a screenshot of your score or result page from the mock exam.</p>
+    <label class="f" for="pFile">Screenshot</label><input class="in" id="pFile" type="file" accept="image/*">
+    <img id="pPrev" class="rprev" style="display:none" alt="Preview">
+    <label class="f" for="pScore">Your score (optional)</label><input class="in" id="pScore" placeholder="e.g. 245/400">
+    <div class="err" id="pErr"></div><button class="btn red" style="width:100%" id="pGo">Submit result</button>`);
+}
+async function submitProof(){
+  const err=$("#pErr"), go=$("#pGo"); err.textContent="";
+  if(!proofImg){ err.textContent="Upload a screenshot of your result first."; return; }
+  go.disabled=true;
+  try{ await B.upd(proofTarget.coll,proofTarget.id,{proof:proofImg,proofAt:Date.now(),scoreText:$("#pScore").value.trim()}); closeModal(); toast("Result uploaded. You can now take another mock."); showDash(); }
+  catch(e){ console.warn(e); err.textContent="We couldn't upload it. Try again."; go.disabled=false; }
+}
+
+/* online quizzes */
+async function startQuiz(mid){
+  if(!me) return openAuth(()=>startQuiz(mid));
+  if(!studentOnly()) return;
+  const m=site.mocks.find(x=>x.id===mid); if(!m) return;
+  try{
+    if(needPaid(m)&&!(await hasPaid())) return paidModal();
+    const subs=await B.listBy("quizsubs",me.uid);
+    if(subs.some(x=>x.mockId===m.id)){ toast("You've already taken this quiz. Your result is on your dashboard."); return; }
+    const names=await unfinishedNames(); if(names.length) return blockedModal(names);
+    const qz=await B.get("quizzes",m.id), qs=(qz&&qz.questions)||[];
+    if(!qs.length){ toast("This quiz isn't ready yet. Please check back soon."); return; }
+    quizState={m,qs,ans:qs.map(()=>-1)}; drawQuiz();
+  }catch(e){ console.warn(e); toast("We couldn't start the quiz. Check your connection and try again."); }
+}
+function drawQuiz(){
+  const {m,qs}=quizState;
+  modal(`<h2>${esc(m.name)}</h2><p class="hint" style="margin:0">Answer every question, then submit. You can only take this quiz once. You'll see your score and the correct answers after you submit.</p>
+    <div class="qprog" id="qProg">0 of ${qs.length} answered</div>
+    ${qs.map((q,i)=>`<fieldset class="qq"><legend>${i+1}. ${esc(q.q)}</legend>${q.options.map((o,j)=>`<label class="opt"><input type="radio" name="q${i}" value="${j}"><span>${esc(o)}</span></label>`).join("")}</fieldset>`).join("")}
+    <div class="err" id="qErr"></div><button class="btn red" style="width:100%;margin-top:8px" id="qSubmit">Submit quiz</button>`,true);
+}
+async function submitQuiz(){
+  const {m,qs,ans}=quizState, err=$("#qErr"), go=$("#qSubmit"); err.textContent="";
+  const left=ans.filter(a=>a<0).length;
+  if(left&&!confirm(`You left ${left} question${left>1?"s":""} unanswered. Submit anyway?`)) return;
+  go.disabled=true;
+  try{ await B.set("quizsubs",me.uid+"_"+m.id,{uid:me.uid,email:me.email,studentName:studentName(),mockId:m.id,mockName:m.name,answers:ans,count:qs.length,submittedAt:Date.now()}); }
+  catch(e){ console.warn(e); err.textContent="We couldn't submit. You may have already submitted this quiz, or your connection dropped."; go.disabled=false; return; }
+  let key=null; try{ key=await B.get("quizkeys",m.id); }catch(e){ console.warn(e); }
+  quizState=null; showQuizResult(m,qs,ans,key);
+}
+function showQuizResult(m,qs,ans,key){
+  const k=(key&&key.answers)||null;
+  if(!k){ modal(`<h2>Submitted</h2><p>Your answers were saved. Your result will show on your dashboard soon.</p><a class="btn red" style="width:100%" href="#dashboard" id="gDash">Go to my dashboard</a>`); return; }
+  const correct=qs.filter((q,i)=>ans[i]===k[i]).length, pct=qs.length?Math.round(correct/qs.length*100):0;
+  modal(`<h2>${esc(m.name)}</h2><div class="qres"><b>${correct}/${qs.length}</b><span>${pct}%</span></div>
+    ${qs.map((q,i)=>{ const ok=ans[i]===k[i]; return `<div class="qrev ${ok?"ok":"bad"}"><div class="qt">${i+1}. ${esc(q.q)}</div>
+      <div>Your answer: ${ans[i]>=0&&q.options[ans[i]]!==undefined?esc(q.options[ans[i]]):"Not answered"}</div>${ok?"":`<div>Correct answer: <b>${esc(q.options[k[i]])}</b></div>`}</div>`; }).join("")}
+    <a class="btn red" style="width:100%;margin-top:14px" href="#dashboard" id="gDash">Go to my dashboard</a>`,true);
+}
+async function reviewQuiz(mid){
+  try{
+    const subs=await B.listBy("quizsubs",me.uid), sub=subs.find(x=>x.mockId===mid); if(!sub) return;
+    const qz=await B.get("quizzes",mid), key=await B.get("quizkeys",mid), m=site.mocks.find(x=>x.id===mid)||{name:sub.mockName};
+    showQuizResult(m,(qz&&qz.questions)||[],sub.answers||[],key);
+  }catch(e){ console.warn(e); toast("We couldn't load your review. Try again."); }
+}
+
+/* =========================================================
 /* =========================================================
    DASHBOARD
    ========================================================= */
 async function showDash(){
   view="dash"; $("#admin").style.display="none"; $("#site").style.display="block"; $("#viewHome").style.display="none"; $("#viewDash").style.display="block"; window.scrollTo(0,0);
   const box=$("#viewDash");
-  if(!me){ box.innerHTML=`<div class="wrap pad"><h1 class="h1">Your dashboard</h1><p class="mute" style="max-width:520px">Log in to see your tutorials, group links, mock exam requests and history.</p><button class="btn red" id="dLogin">Log in or create an account</button></div>`; $("#dLogin").onclick=()=>openAuth(()=>showDash()); return; }
+  if(!me){ box.innerHTML=`<div class="wrap pad"><h1 class="h1">Your dashboard</h1><p class="mute" style="max-width:520px">Log in to see your tutorials, group links, mock exams and history.</p><button class="btn red" id="dLogin">Log in or create an account</button></div>`; $("#dLogin").onclick=()=>openAuth(()=>showDash()); return; }
   box.innerHTML=`<div class="wrap pad"><p class="mute">Loading your dashboard...</p></div>`;
-  let regs=[],reqs=[];
-  try{ [regs,reqs]=await Promise.all([B.listBy("regs",me.uid),B.listBy("mockreqs",me.uid)]); }
+  let regs=[],reqs=[],acts=[],subs=[];
+  const safe=p=>p.catch(e=>{ console.warn(e); return []; });
+  try{ regs=await B.listBy("regs",me.uid); }
   catch(e){ console.warn(e); box.innerHTML=`<div class="wrap pad"><h1 class="h1">Your dashboard</h1><p class="err">We couldn't load your records. Check your connection and refresh.</p></div>`; return; }
-  regs.sort((a,b)=>b.createdAt-a.createdAt); reqs.sort((a,b)=>b.createdAt-a.createdAt);
+  [reqs,acts,subs]=await Promise.all([safe(B.listBy("mockreqs",me.uid)),safe(B.listBy("mockacts",me.uid)),safe(B.listBy("quizsubs",me.uid))]);
+  const keys={}; await Promise.all(subs.map(async x=>{ try{ keys[x.mockId]=await B.get("quizkeys",x.mockId); }catch(e){ keys[x.mockId]=null; } }));
+  regs.sort((a,b)=>b.createdAt-a.createdAt);
   const name=(profile&&profile.name)||me.name||me.email;
+  const scoreOf=x=>{ const k=keys[x.mockId]&&keys[x.mockId].answers; if(!k) return null; const c=k.filter((a,i)=>(x.answers||[])[i]===a).length; return {c,n:k.length,pct:k.length?Math.round(c/k.length*100):0}; };
+  const mocks=[
+    ...reqs.map(r=>({t:"locked",ts:r.createdAt,r})),
+    ...acts.map(a=>({t:"open",ts:a.openedAt,r:a})),
+    ...subs.map(x=>({t:"quiz",ts:x.submittedAt,r:x}))
+  ].sort((a,b)=>b.ts-a.ts);
+  const waiting=acts.filter(a=>!a.proof).length+reqs.filter(r=>r.status==="approved"&&!r.proof).length;
   const hist=[]; regs.forEach(r=>{ hist.push({ts:r.createdAt,t:`Registered for ${r.tutorialName}`,s:r.status==="completed"?"approved":r.status});
       if(r.status==="completed") hist.push({ts:r.updatedAt||r.createdAt,t:`Took part in ${r.tutorialName}`,s:"completed"}); });
     reqs.forEach(r=>hist.push({ts:r.createdAt,t:`Requested ${r.mockName}`,s:r.status}));
+    acts.forEach(a=>hist.push({ts:a.openedAt,t:`Opened ${a.mockName}`,s:a.proof?"completed":"pending"}));
+    subs.forEach(x=>hist.push({ts:x.submittedAt,t:`Took the quiz ${x.mockName}`,s:"completed"}));
   hist.sort((a,b)=>b.ts-a.ts);
+  const proofBlock=(coll,r)=>r.proof?`${safeImg(r.proof)?`<img class="rthumb zoom" src="${esc(r.proof)}" alt="Your result (tap to enlarge)">`:""}${r.scoreText?`<span>Score: <b>${esc(r.scoreText)}</b></span>`:""}`:`<button class="btn red sm" data-proof="${coll}:${esc(r.id)}">Upload result screenshot</button>`;
+  const mockCard=m=>{
+    const r=m.r;
+    if(m.t==="quiz"){ const sc=scoreOf(r); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Online quiz, taken ${fmtDate(r.submittedAt)}</div></div><span class="st completed">${sc?sc.c+"/"+sc.n+" ("+sc.pct+"%)":"Marked soon"}</span></div>
+      <div class="acts"><button class="btn ghost sm" data-review="${esc(r.mockId)}">See my answers</button></div></div>`; }
+    if(m.t==="open"){ const mk=site.mocks.find(x=>x.id===r.mockId), lk=safeUrl(mk&&mk.link); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Open mock, opened ${fmtDate(r.openedAt)}</div></div><span class="st ${r.proof?"completed":"pending"}">${r.proof?"Result uploaded":"Waiting for your result"}</span></div>
+      <div class="acts">${lk&&!r.proof?`<a class="btn ghost sm" href="${esc(lk)}" target="_blank" rel="noopener">Open mock again</a>`:""}${proofBlock("mockacts",r)}</div></div>`; }
+    const lk=safeUrl(r.link);
+    return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Request-only mock, requested ${fmtDate(r.createdAt)}</div></div><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
+      ${r.note?`<div class="note">Message from Xenith: ${esc(r.note)}</div>`:""}
+      ${r.status==="approved"?`<div class="acts">${lk&&!r.proof?`<a class="btn red" href="${esc(lk)}" target="_blank" rel="noopener">Open your mock exam</a>`:""}${proofBlock("mockreqs",r)}</div>`:""}
+      ${r.status==="requested"?`<div class="acts"><span class="mute">We'll approve this and send your link here.</span></div>`:""}</div>`;
+  };
   box.innerHTML=`<div class="wrap pad">
     <h1 class="h1">Hello, ${esc(name.split(" ")[0])}</h1><p class="mute">${esc(me.email)} <a href="#" id="dOut">Log out</a></p>
-    <div class="stats"><div class="stat"><b>${regs.length}</b><span>Tutorials</span></div><div class="stat"><b>${regs.filter(r=>r.status==="approved"||r.status==="completed").length}</b><span>Approved</span></div><div class="stat"><b>${reqs.length}</b><span>Mock requests</span></div></div>
+    <div class="stats"><div class="stat"><b>${regs.length}</b><span>Tutorials</span></div><div class="stat"><b>${regs.filter(r=>r.status==="approved"||r.status==="completed").length}</b><span>Approved</span></div><div class="stat"><b>${acts.length+subs.length+reqs.filter(r=>r.status==="approved").length}</b><span>Mocks taken</span></div></div>
 
     <div class="dsec"><div class="row"><h2>My tutorials</h2><a class="btn ghost sm" href="#tutorials">Register for another</a></div>
     ${regs.length?regs.map(r=>{ const lk=safeUrl(r.groupLink); return `<div class="rcard"><div class="top"><div><h3>${esc(r.tutorialName)}</h3><div class="meta">Sent ${fmtDate(r.createdAt)}${money(r.price)?" - "+money(r.price):""}</div></div><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
@@ -632,11 +840,9 @@ async function showDash(){
       ${r.status==="pending"?`<span class="mute">We're checking your receipt.</span>`:""}
       ${r.status==="rejected"?`<label class="btn ghost sm">Upload a new receipt<input type="file" accept="image/*" data-reup="${esc(r.id)}" hidden></label>`:""}</div></div>`; }).join(""):`<div class="empty">You haven't registered for a tutorial yet. <a href="#tutorials">See tutorials</a></div>`}</div>
 
-    <div class="dsec"><div class="row"><h2>My mock exams</h2><button class="btn ghost sm" data-mock="">Request a mock exam</button></div>
-    ${reqs.length?reqs.map(r=>{ const lk=safeUrl(r.link); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Requested ${fmtDate(r.createdAt)}</div></div><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
-      ${r.note?`<div class="note">Message from Xenith: ${esc(r.note)}</div>`:""}
-      ${r.status==="approved"&&lk?`<div class="acts"><a class="btn red" href="${esc(lk)}" target="_blank" rel="noopener">Open your mock exam</a></div>`:""}
-      ${r.status==="requested"?`<div class="acts"><span class="mute">We'll approve this and send your link here.</span></div>`:""}</div>`; }).join(""):`<div class="empty">No mock exam requests yet.</div>`}</div>
+    <div class="dsec"><div class="row"><h2>My mock exams</h2><a class="btn ghost sm" href="#mocks">Browse mock exams</a></div>
+    ${waiting?`<div class="rcard" style="border-color:var(--red)"><b>Upload your result screenshot to unlock other mocks.</b> You have ${waiting} mock${waiting>1?"s":""} waiting for a result.</div>`:""}
+    ${mocks.length?mocks.map(mockCard).join(""):`<div class="empty">You haven't taken a mock exam yet. <a href="#mocks">See mock exams</a></div>`}</div>
 
     <div class="dsec"><h2>History</h2>${hist.length?`<ul class="tl">${hist.map(h=>`<li><div class="d">${fmtDate(h.ts)}</div>${esc(h.t)} <span class="st ${esc(h.s)}">${STATUS[h.s]||esc(h.s)}</span></li>`).join("")}</ul>`:`<div class="empty">Your activity will show here.</div>`}</div>
   </div>`;
@@ -649,9 +855,10 @@ async function reupload(id,file){
 /* =========================================================
    ADMIN
    ========================================================= */
+let aActs=[], aSubs=[], aKeys={}, aQz={}, resFilter="all", resQ="", qbSel="", qbData={};
 let aTab="receipts", aRegs=[], aReqs=[], rFilter="pending", rQ="", qFilter="requested";
-const CONTENT_TABS=["brand","team","tutorials","accounts","mocks","contacts","settings"];
-const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",brand:"Brand",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings"};
+const CONTENT_TABS=["quiz","brand","team","tutorials","accounts","mocks","contacts","settings","design"];
+const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",results:"Results",quiz:"Quiz builder",brand:"Brand",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings",design:"Fonts"};
 
 async function showAdmin(){
   view="admin"; $("#site").style.display="none"; $("#admin").style.display="block"; window.scrollTo(0,0);
@@ -664,24 +871,45 @@ async function showAdmin(){
   if(!cfg){ cfg=await B.getCfg()||{}; } cfg.groupLinks=cfg.groupLinks||{}; cfg.mockLinks=cfg.mockLinks||{};
   await loadAdminLists(); renderAdmin();
 }
+let aErr="";
 async function loadAdminLists(){
-  try{ [aRegs,aReqs]=await Promise.all([B.listAll("regs"),B.listAll("mockreqs")]); }
-  catch(e){ console.warn(e); toast("Couldn't load student requests. Check your Firestore rules."); aRegs=[]; aReqs=[]; }
+  aErr="";
+  const grab=async(c,label,hint)=>{ try{ return await B.listAll(c); }catch(e){ console.warn(e); aErr+=label+" could not be loaded ("+(e.code||e.message)+"). "+(hint||""); return []; } };
+  aRegs=await grab("regs","Receipts");
+  aReqs=await grab("mockreqs","Mock requests");
+  aActs=await grab("mockacts","Open mock activity","Publish the latest Firestore rules. ");
+  aSubs=await grab("quizsubs","Quiz results","Publish the latest Firestore rules. ");
+  aKeys={}; aQz={};
+  for(const m of site.mocks.filter(x=>kindOf(x)==="quiz")){
+    try{ aKeys[m.id]=await B.get("quizkeys",m.id); }catch(e){ console.warn(e); }
+    try{ aQz[m.id]=await B.get("quizzes",m.id); }catch(e){ console.warn(e); }
+  }
 }
-function renderAdmin(){
+function renderTabs(){
   const nPend=aRegs.filter(r=>r.status==="pending").length, nReq=aReqs.filter(r=>r.status==="requested").length;
   $("#aTabs").innerHTML=Object.keys(TABLABEL).map(k=>`<button data-t="${k}" class="${k===aTab?"on":""}">${TABLABEL[k]}${k==="receipts"&&nPend?`<i>${nPend}</i>`:""}${k==="mockreqs"&&nReq?`<i>${nReq}</i>`:""}</button>`).join("");
+}
+function renderAdmin(){
+  renderTabs();
   const isContent=CONTENT_TABS.includes(aTab);
   $("#aSave").style.display=isContent?"block":"none";
-  $("#aPanel").innerHTML = aTab==="receipts"?receiptsPanel():aTab==="mockreqs"?mockreqsPanel():contentPanel();
-  if(aTab==="receipts") drawReceiptList(); if(aTab==="mockreqs") drawMockList();
+  $("#aPanel").innerHTML = aTab==="receipts"?receiptsPanel():aTab==="mockreqs"?mockreqsPanel():aTab==="results"?resultsPanel():aTab==="quiz"?quizPanel():contentPanel();
+  if(aTab==="receipts") drawReceiptList(); if(aTab==="mockreqs") drawMockList(); if(aTab==="results") drawResults();
   updateMeter();
 }
+async function refreshAdmin(manual,silent){
+  if(view!=="admin"||!isAdmin) return;
+  const ae=document.activeElement, busy=!manual&&ae&&ae.closest&&ae.closest("#aPanel")&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
+  await loadAdminLists();
+  if(["receipts","mockreqs","results"].includes(aTab)){ if(busy) renderTabs(); else renderAdmin(); } else renderTabs();
+  if(manual&&!silent) toast("Updated.");
+}
+setInterval(()=>{ if(view==="admin"&&isAdmin&&(["receipts","mockreqs","results"].includes(aTab))) refreshAdmin(false); },20000);
 
 /* ---- receipts queue ---- */
 function receiptsPanel(){
   const c=s=>aRegs.filter(r=>r.status===s).length;
-  return `<div class="chipbar" id="rChips">${["pending","approved","rejected","completed","all"].map(s=>`<button data-rf="${s}" class="${s===rFilter?"on":""}">${s==="all"?"All":STATUS[s].replace("Waiting for approval","Pending")} (${s==="all"?aRegs.length:c(s)})</button>`).join("")}</div>
+  return `${aErr?`<div class="err">${esc(aErr)}</div>`:""}<div style="display:flex;justify-content:flex-end"><button class="btn ghost sm" data-refresh="1">Refresh</button></div><div class="chipbar" id="rChips">${["pending","approved","rejected","completed","all"].map(s=>`<button data-rf="${s}" class="${s===rFilter?"on":""}">${s==="all"?"All":STATUS[s].replace("Waiting for approval","Pending")} (${s==="all"?aRegs.length:c(s)})</button>`).join("")}</div>
     <input class="in" id="rSearch" placeholder="Search by name, email or tutorial" value="${esc(rQ)}"><div id="rList"></div>`;
 }
 function drawReceiptList(){
@@ -718,7 +946,7 @@ async function regAction(act,id){
 /* ---- mock requests ---- */
 function mockreqsPanel(){
   const c=s=>aReqs.filter(r=>r.status===s).length;
-  return `<div class="chipbar">${["requested","approved","rejected","all"].map(s=>`<button data-qf="${s}" class="${s===qFilter?"on":""}">${s==="all"?"All":STATUS[s]} (${s==="all"?aReqs.length:c(s)})</button>`).join("")}</div><div id="qList"></div>`;
+  return `${aErr?`<div class="err">${esc(aErr)}</div>`:""}<div style="display:flex;justify-content:flex-end"><button class="btn ghost sm" data-refresh="1">Refresh</button></div><div class="chipbar">${["requested","approved","rejected","all"].map(s=>`<button data-qf="${s}" class="${s===qFilter?"on":""}">${s==="all"?"All":STATUS[s]} (${s==="all"?aReqs.length:c(s)})</button>`).join("")}</div><div id="qList"></div>`;
 }
 function drawMockList(){
   const list=aReqs.filter(r=>qFilter==="all"||r.status===qFilter).sort((a,b)=>b.createdAt-a.createdAt);
@@ -747,6 +975,89 @@ async function mockAction(act,id){
 }
 
 /* ---- content editing ---- */
+/* ---- results: who took what, and how they did ---- */
+function resultRows(){
+  const rows=[];
+  aSubs.forEach(x=>{
+    const key=(aKeys[x.mockId]||{}).answers||[], total=key.length||x.count||(x.answers||[]).length;
+    const c=key.length?(x.answers||[]).filter((a,i)=>a===key[i]).length:null, pct=c==null||!total?null:Math.round(c/total*100);
+    rows.push({kind:"quiz",coll:"quizsubs",id:x.id,name:x.studentName,email:x.email,mock:x.mockName,ts:x.submittedAt,pct,perf:c==null?"Answer key not set":`${c}/${total} (${pct}%)`});
+  });
+  aActs.forEach(a=>rows.push({kind:"open",coll:"mockacts",id:a.id,name:a.studentName,email:a.email,mock:a.mockName,ts:a.openedAt,proof:a.proof,scoreText:a.scoreText}));
+  aReqs.filter(r=>r.status==="approved").forEach(r=>rows.push({kind:"locked",coll:"mockreqs",id:r.id,name:r.studentName,email:r.email,mock:r.mockName,ts:r.updatedAt||r.createdAt,proof:r.proof,scoreText:r.scoreText}));
+  return rows.sort((a,b)=>(b.ts||0)-(a.ts||0));
+}
+function resultsPanel(){
+  const rows=resultRows(), c=k=>rows.filter(r=>r.kind===k).length;
+  return `${aErr?`<div class="err">${esc(aErr)}</div>`:""}<div style="display:flex;justify-content:flex-end"><button class="btn ghost sm" data-refresh="1">Refresh</button></div>
+    <div class="chipbar">${[["all","All"],["quiz","Quizzes"],["open","Open mocks"],["locked","Request-only"]].map(([k,l])=>`<button data-rsf="${k}" class="${k===resFilter?"on":""}">${l} (${k==="all"?rows.length:c(k)})</button>`).join("")}</div>
+    <input class="in" id="rSq" placeholder="Search by student or mock" value="${esc(resQ)}"><div class="hint" id="resStats" style="margin-top:10px"></div><div id="resList"></div>`;
+}
+function drawResults(){
+  const q=resQ.trim().toLowerCase();
+  const rows=resultRows().filter(r=>(resFilter==="all"||r.kind===resFilter)&&(!q||[r.name,r.email,r.mock].join(" ").toLowerCase().includes(q)));
+  const qz=rows.filter(r=>r.kind==="quiz"&&r.pct!=null), avg=qz.length?Math.round(qz.reduce((a,r)=>a+r.pct,0)/qz.length):null;
+  $("#resStats").textContent=`${rows.length} result${rows.length===1?"":"s"}`+(avg!=null?`, quiz average ${avg}%`:"");
+  $("#resList").innerHTML=rows.length?rows.map(r=>`<div class="item"><div class="hd"><b>${esc(r.name)}</b><span class="st ${r.kind==="quiz"?"completed":"pending"}">${KIND_LABEL[r.kind]}</span></div>
+    <div>${esc(r.email)}</div><div style="margin-top:6px"><b>${esc(r.mock)}</b></div><div class="hint">${fmtDate(r.ts)}</div>
+    <div class="arow" style="margin-top:10px;align-items:center"><div>${r.kind==="quiz"?`<div class="price" style="font-size:28px">${esc(r.perf)}</div>`:(r.proof?`Score typed by the student: <b>${esc(r.scoreText||"not given")}</b>`:`<span class="st requested">Waiting for screenshot</span>`)}</div>
+    ${safeImg(r.proof)?`<img class="rthumb zoom" src="${esc(r.proof)}" alt="Result screenshot (tap to enlarge)">`:""}</div>
+    <div style="margin-top:10px"><button class="btn danger sm" data-rdel="${r.coll}:${esc(r.id)}">${r.kind==="quiz"?"Delete and allow retake":"Delete"}</button></div></div>`).join(""):`<div class="empty" style="margin-top:12px">Nothing here yet.</div>`;
+}
+
+/* ---- quiz builder ---- */
+async function ensureQb(id){
+  if(qbData[id]) return;
+  let qz=null,key=null; try{ qz=await B.get("quizzes",id); key=await B.get("quizkeys",id); }catch(e){ console.warn(e); }
+  const qs=(qz&&qz.questions)||[], ans=(key&&key.answers)||[];
+  qbData[id]={questions:qs.map((q,i)=>({q:q.q||"",options:[...(q.options||[])],correct:Number.isInteger(ans[i])?ans[i]:-1})),dirty:false};
+}
+function parseQuestions(text){
+  const out=[];
+  String(text).replace(/\r/g,"").split(/\n\s*\n/).forEach(block=>{
+    const lines=block.split("\n").map(l=>l.trim()).filter(Boolean); if(!lines.length) return;
+    const q=[], opts=[]; let correct=-1;
+    lines.forEach(l=>{
+      let m=l.match(/^answer\s*[:\-]\s*\(?([A-Ha-h])\)?\s*$/i);
+      if(m){ correct=m[1].toUpperCase().charCodeAt(0)-65; return; }
+      m=l.match(/^\(?([A-Ha-h])[\).:]\s*(.+)$/);
+      if(m){ let t=m[2].trim(); if(/\*\s*$/.test(t)){ t=t.replace(/\s*\*+\s*$/,""); correct=opts.length; } opts.push(t); return; }
+      if(!opts.length) q.push(l.replace(/^(?:q(?:uestion)?\s*)?\d+\s*[\).:\-]\s*/i,"").replace(/^q\s*[:\-]\s*/i,"")); else opts[opts.length-1]+=" "+l;
+    });
+    if(q.length&&opts.length>=2) out.push({q:q.join(" "),options:opts,correct:correct<opts.length?correct:-1});
+  });
+  return out;
+}
+function validateQb(){
+  for(const [id,qd] of Object.entries(qbData)){
+    if(!qd.dirty) continue; const name=(site.mocks.find(m=>m.id===id)||{}).name||"Quiz";
+    for(let i=0;i<qd.questions.length;i++){ const q=qd.questions[i];
+      if(!q.q.trim()) return `${name}: question ${i+1} is empty.`;
+      if(q.options.length<2||q.options.some(o=>!o.trim())) return `${name}: question ${i+1} needs at least two options and none can be blank.`;
+      if(!(q.correct>=0&&q.correct<q.options.length)) return `${name}: tick the correct answer for question ${i+1}.`; }
+  }
+  return "";
+}
+function quizPanel(){
+  const quizzes=site.mocks.filter(m=>kindOf(m)==="quiz");
+  if(!quizzes.length) return `<div class="item">No quizzes yet. In <b>Mock exams</b>, add a mock, set its type to <b>Online quiz</b> and save. Then come back here to add the questions.</div>`;
+  if(!quizzes.some(m=>m.id===qbSel)) qbSel=quizzes[0].id;
+  const pick=`<div class="item"><label class="f">Quiz</label><select class="in" data-qbsel="1">${quizzes.map(m=>`<option value="${esc(m.id)}"${m.id===qbSel?" selected":""}>${esc(m.name||"Untitled quiz")}</option>`).join("")}</select></div>`;
+  const qd=qbData[qbSel];
+  if(!qd){ ensureQb(qbSel).then(()=>{ if(aTab==="quiz") renderAdmin(); }); return pick+`<p class="mute">Loading questions...</p>`; }
+  return pick+`<div class="item"><b style="color:var(--navy)">Paste questions</b>
+    <textarea class="in" id="qbPaste" style="min-height:140px" placeholder="1. What is 7 x 8?\nA) 54\nB) 56*\nC) 58\nD) 64"></textarea>
+    <p class="hint">One question per block, with a blank line between questions. Start each option with A), B), C)... and put a * at the end of the correct option, or add a line such as Answer: B.</p>
+    <button class="btn ghost sm" style="margin-top:8px" data-qimport="1">Add these questions</button></div>`
+  +qd.questions.map((q,i)=>`<div class="item"><div class="hd"><b>Question ${i+1}</b>
+      <button class="btn ghost sm" data-qmv="${i}:-1">Up</button><button class="btn ghost sm" data-qmv="${i}:1">Down</button><button class="btn danger sm" data-qdel="${i}">Delete</button></div>
+    <textarea class="in" data-qq="${i}">${esc(q.q)}</textarea>
+    <label class="f">Options (tick the correct answer)</label>
+    ${q.options.map((o,j)=>`<div class="orow"><input type="radio" name="qc${i}" data-qc="${i}:${j}"${q.correct===j?" checked":""} aria-label="Correct answer"><input class="in" data-qo="${i}:${j}" value="${esc(o)}" placeholder="Option ${String.fromCharCode(65+j)}"><button class="btn danger sm" data-odel="${i}:${j}">Remove</button></div>`).join("")}
+    <button class="btn ghost sm" data-oadd="${i}">Add option</button></div>`).join("")
+  +`<button class="btn red" data-qadd="1">Add a question</button><p class="hint">${qd.questions.length} question${qd.questions.length===1?"":"s"}. Press Save and publish when you're done. Students can't see the answers until they submit.</p>`;
+}
+
 function upField(label,list,i,field,mode,cur,hint){
   const ok=safeImg(cur);
   return `<label class="f">${label}</label><div class="lg">${ok?`<img class="lp" src="${esc(cur)}" alt="">`:`<div class="lp ph0">No image</div>`}
@@ -785,28 +1096,50 @@ function contentPanel(){
       <label class="f">Account name</label>${inp("accounts",i,"accountName",it.accountName)}
       <label class="f">Account number</label>${inp("accounts",i,"accountNumber",it.accountNumber)}
       <label class="f">Note for students (optional)</label>${inp("accounts",i,"note",it.note,"e.g. Use your full name as the reference")}`,{id:"a"+uid8(),bank:"",accountName:"",accountNumber:"",note:""}),
-    mocks:()=>listPanel("mocks","Mock exam",(it,i)=>`<label class="f">Name</label>${inp("mocks",i,"name",it.name,"e.g. JAMB mock exam")}
+    mocks:()=>listPanel("mocks","Mock exam",(it,i)=>{ const k=kindOf(it); return `<label class="f">Name</label>${inp("mocks",i,"name",it.name,"e.g. JAMB practice test")}
       <label class="f">Description</label><textarea class="in" data-l="mocks" data-i="${i}" data-k="description">${esc(it.description)}</textarea>
-      <label class="f">Default link (private, optional)</label><input class="in" data-cfg="mockLinks" data-ck="${esc(it.id)}" value="${esc(cfg.mockLinks[it.id]||"")}" placeholder="Prefills the link when you approve a request">`,{id:"m"+uid8(),name:"",description:""}),
+      <label class="f">Type</label><select class="in" data-l="mocks" data-i="${i}" data-k="kind">
+        <option value="open"${k==="open"?" selected":""}>Open link: any signed-in student can open it</option>
+        <option value="locked"${k==="locked"?" selected":""}>Request-only link: students request, you approve</option>
+        <option value="quiz"${k==="quiz"?" selected":""}>Online quiz: marked automatically</option></select>
+      ${k==="open"?`<label class="f">Link students open</label>${inp("mocks",i,"link",it.link,"https://...")}<p class="hint">This link is not private. Anyone who has it can open the mock.</p>`:""}
+      ${k==="locked"?`<label class="f">Default link (private, optional)</label><input class="in" data-cfg="mockLinks" data-ck="${esc(it.id)}" value="${esc(cfg.mockLinks[it.id]||"")}" placeholder="Prefills the link when you approve a request">`:""}
+      ${k==="quiz"?`<p class="hint">Save this mock first, then add its questions in the Quiz builder tab.</p><button class="btn ghost sm" data-qb="${esc(it.id)}">Edit questions</button>`:""}
+      <label class="f">Who can take it</label><select class="in" data-l="mocks" data-i="${i}" data-k="paidOnly"><option value="false"${!needPaid(it)?" selected":""}>Any signed-in student</option><option value="true"${needPaid(it)?" selected":""}>Only students whose tutorial payment is approved</option></select>`; },{id:"m"+uid8(),name:"",description:"",kind:"open",link:"",paidOnly:false}),
     contacts:()=>listPanel("contacts","Contact",(it,i)=>`<label class="f">Label</label>${inp("contacts",i,"label",it.label,"Email, Telegram, Instagram...")}
       <label class="f">Link</label>${inp("contacts",i,"url",it.url,"mailto:you@mail.com or https://...")}
       <label class="f">Text shown</label>${inp("contacts",i,"text",it.text)}`,{label:"",url:"",text:""}),
+    design:()=>{ const f=S.fonts; return `<div class="item"><b style="color:var(--navy)">Fonts for the whole site</b>
+      <label class="f">Headings and big titles</label>${fontSelect('data-fg="heading"',f.heading,"Default (Cormorant Garamond)")}
+      <label class="f">Everything else</label>${fontSelect('data-fg="body"',f.body,"Default (Source Sans 3)")}
+      <p class="hint">These are free Google Fonts. You can also give a single section its own font below.</p></div>`
+      +DSECS.map(([k,l])=>`<div class="item"><b style="color:var(--navy)">${l}</b><label class="f">Font for this section</label>${fontSelect(`data-fs="${k}"`,f.sec[k],"Same as the whole site")}</div>`).join(""); },
     settings:()=>`<div class="item"><label class="f">Currency symbol</label><input class="in" data-s="currency" value="${esc(st.currency)}">
-      <label class="f">Students can request mock exams</label><select class="in" data-s="mockNeedsPayment"><option value="true"${st.mockNeedsPayment?" selected":""}>Only after a tutorial payment is approved</option><option value="false"${!st.mockNeedsPayment?" selected":""}>Any signed-in student</option></select>
       <label class="f">WhatsApp link (optional)</label><input class="in" data-s="whatsapp" value="${esc(st.whatsapp)}" placeholder="https://wa.me/234..."></div>`
   };
   return F[aTab]();
 }
 
+function fontSelect(attrs,cur,def){
+  return `<div class="fsel"><select class="in" ${attrs}><option value="">${def}</option>${Object.keys(FONTS).map(n=>`<option value="${esc(n)}"${n===cur?" selected":""}>${esc(n)}</option>`).join("")}</select>
+  <div class="fprev" style="${cur?`font-family:${esc(fam(cur))}`:""}">The quick brown fox jumps over the lazy dog</div></div>`;
+}
+function previewFont(sel){ const n=sel.value, pv=sel.closest(".fsel")&&sel.closest(".fsel").querySelector(".fprev"); if(n) loadFonts([n]); if(pv) pv.style.fontFamily=n?fam(n):""; }
 function targetOf(ul,ui){ return ul==="brand"?site.brand:site[ul][+ui]; }
 function bindAdmin(){
   const root=$("#aPanel");
   root.oninput=e=>{
     const t=e.target, d=t.dataset;
-    if(d.b){ site.brand[d.b]=t.value; markDirty(); }
+    if(d.qq!==undefined){ const qd=qbData[qbSel]; qd.questions[+d.qq].q=t.value; qd.dirty=true; markDirty(); }
+    else if(d.qo!==undefined){ const [i,j]=d.qo.split(":").map(Number), qd=qbData[qbSel]; qd.questions[i].options[j]=t.value; qd.dirty=true; markDirty(); }
+    else if(d.qc!==undefined){ const [i,j]=d.qc.split(":").map(Number), qd=qbData[qbSel]; qd.questions[i].correct=j; qd.dirty=true; markDirty(); }
+    else if(t.id==="rSq"){ resQ=t.value; drawResults(); }
+    else if(d.fg){ site.fonts[d.fg]=t.value; previewFont(t); applyDesign(); markDirty(); }
+    else if(d.fs){ site.fonts.sec[d.fs]=t.value; previewFont(t); applyDesign(); markDirty(); }
+    else if(d.b){ site.brand[d.b]=t.value; markDirty(); }
     else if(d.s){ site.settings[d.s]= d.s==="mockNeedsPayment"?t.value==="true":t.value; markDirty(); }
     else if(d.cfg){ cfg[d.cfg][d.ck]=t.value; markDirty(); }
-    else if(d.l){ site[d.l][+d.i][d.k]=t.value; markDirty(); }
+    else if(d.l){ site[d.l][+d.i][d.k]= d.k==="paidOnly"?t.value==="true":t.value; markDirty(); }
     else if(t.id==="rSearch"){ rQ=t.value; drawReceiptList(); }
   };
   root.onchange=async e=>{
@@ -817,10 +1150,22 @@ function bindAdmin(){
       catch{ $("#saveMsg").textContent="Could not use that image. Try a PNG or JPG."; }
     }
     if(t.dataset.l==="tutorials"&&t.dataset.k==="accountId") markDirty();
+    if(t.dataset.l==="mocks"&&t.dataset.k==="kind") renderAdmin();
+    if(t.dataset.qbsel!==undefined){ qbSel=t.value; renderAdmin(); }
   };
   root.onclick=async e=>{
     const b=e.target.closest("button"); if(!b) return; const d=b.dataset;
-    if(d.rf){ rFilter=d.rf; renderAdmin(); }
+    if(d.refresh){ await refreshAdmin(true); }
+    else if(d.rsf){ resFilter=d.rsf; renderAdmin(); }
+    else if(d.rdel){ const k=d.rdel.indexOf(":"), coll=d.rdel.slice(0,k), id=d.rdel.slice(k+1); if(confirm("Delete this entry?")){ await B.del(coll,id); await loadAdminLists(); renderAdmin(); toast("Deleted."); } }
+    else if(d.qb){ qbSel=d.qb; aTab="quiz"; renderAdmin(); }
+    else if(d.qimport){ const qd=qbData[qbSel], items=parseQuestions(($("#qbPaste")||{}).value||""); if(!items.length) toast("No questions found. Check the format."); else { qd.questions.push(...items); qd.dirty=true; markDirty(); renderAdmin(); toast(items.length+" question"+(items.length>1?"s":"")+" added."); } }
+    else if(d.qadd){ const qd=qbData[qbSel]; qd.questions.push({q:"",options:["","","",""],correct:-1}); qd.dirty=true; markDirty(); renderAdmin(); }
+    else if(d.qdel!==undefined){ if(confirm("Delete this question?")){ const qd=qbData[qbSel]; qd.questions.splice(+d.qdel,1); qd.dirty=true; markDirty(); renderAdmin(); } }
+    else if(d.qmv){ const [i,dir]=d.qmv.split(":").map(Number), a=qbData[qbSel].questions, j=i+dir; if(j>=0&&j<a.length){ [a[i],a[j]]=[a[j],a[i]]; qbData[qbSel].dirty=true; markDirty(); renderAdmin(); } }
+    else if(d.oadd!==undefined){ const qd=qbData[qbSel]; qd.questions[+d.oadd].options.push(""); qd.dirty=true; markDirty(); renderAdmin(); }
+    else if(d.odel){ const [i,j]=d.odel.split(":").map(Number), qd=qbData[qbSel], q=qd.questions[i]; if(q.options.length<=2) toast("A question needs at least two options."); else { q.options.splice(j,1); if(q.correct===j) q.correct=-1; else if(q.correct>j) q.correct--; qd.dirty=true; markDirty(); renderAdmin(); } }
+    else if(d.rf){ rFilter=d.rf; renderAdmin(); }
     else if(d.qf){ qFilter=d.qf; renderAdmin(); }
     else if(d.ra){ b.disabled=true; await regAction(d.ra,d.id); }
     else if(d.qa){ b.disabled=true; await mockAction(d.qa,d.id); }
@@ -841,13 +1186,21 @@ async function saveAll(){
   const msg=$("#saveMsg"), btn=$("#saveBtn"); btn.disabled=true; msg.textContent="Saving...";
   try{
     if(JSON.stringify(site).length>1000000){ msg.textContent="Too much image data to save. Remove or shrink some images."; btn.disabled=false; return; }
+    const bad=validateQb(); if(bad){ msg.textContent=bad; btn.disabled=false; return; }
     await B.saveSite(site); await B.saveCfg(cfg);
+    for(const [id,qd] of Object.entries(qbData)){
+      if(!qd.dirty) continue;
+      await B.set("quizzes",id,{questions:qd.questions.map(q=>({q:q.q.trim(),options:q.options.map(o=>o.trim())})),updatedAt:Date.now()});
+      await B.set("quizkeys",id,{answers:qd.questions.map(q=>q.correct),updatedAt:Date.now()});
+      qd.dirty=false;
+    }
     msg.textContent=B.mode==="demo"?"Demo mode: updated here only, not saved.":"Saved. Your site is updated.";
   }catch(e){ console.error(e); msg.textContent="Could not save: "+(e.message||"check your Firestore rules."); }
   btn.disabled=false; updateMeter();
 }
 
 /* =========================================================
+   /* =========================================================
    GLOBAL EVENTS
    ========================================================= */
 document.addEventListener("click",async e=>{
@@ -860,12 +1213,19 @@ document.addEventListener("click",async e=>{
   if(t.id==="aForgot"){ e.preventDefault(); doForgot(); return; }
   if(t.id==="rGo"){ submitReg(); return; }
   if(t.id==="mGo"){ submitMock(); return; }
+  if(t.id==="pGo"){ submitProof(); return; }
+  if(t.id==="qSubmit"){ submitQuiz(); return; }
+  if(t.id==="gDash"){ closeModal(); if(location.hash==="#dashboard") setTimeout(showDash,0); return; }
+  const mo2=c("[data-mopen]"); if(mo2){ openOpenMock(mo2.dataset.mopen); return; }
+  const qzb=c("[data-quiz]"); if(qzb){ startQuiz(qzb.dataset.quiz); return; }
+  const pfb=c("[data-proof]"); if(pfb){ const [coll,id]=pfb.dataset.proof.split(":"); openProof(coll,id); return; }
+  const rvb=c("[data-review]"); if(rvb){ reviewQuiz(rvb.dataset.review); return; }
   if(t.id==="dOut"){ e.preventDefault(); await B.signOut(); location.hash=""; if(view!=="home") route(); return; }
   const rg=c("[data-reg]"); if(rg){ openRegister(rg.dataset.reg); return; }
   const mk=c("[data-mock]"); if(mk){ openMock(mk.dataset.mock); return; }
   const cp=c("[data-copy]"); if(cp){ try{ await navigator.clipboard.writeText(cp.dataset.copy); toast("Account number copied."); }catch{ toast("Copy it manually: "+cp.dataset.copy); } return; }
   const mo=c(".mopt"); if(mo){ const inp=mo.querySelector("input"); if(inp){ mockPick=inp.value; document.querySelectorAll(".mopt").forEach(x=>x.classList.toggle("on",x===mo)); } }
-  const tb=c("#aTabs button"); if(tb){ aTab=tb.dataset.t; renderAdmin(); bindAdmin(); return; }
+  const tb=c("#aTabs button"); if(tb){ aTab=tb.dataset.t; if(["receipts","mockreqs","results"].includes(aTab)) await refreshAdmin(true,true); else renderAdmin(); return; }
 });
 document.addEventListener("change",async e=>{
   const t=e.target;
@@ -874,6 +1234,10 @@ document.addEventListener("change",async e=>{
     try{ regReceipt=await resizeImage(t.files[0],"receipt"); const p=$("#rPrev"); p.src=regReceipt; p.style.display="block"; }
     catch{ regReceipt=""; err.textContent="We couldn't read that image. Try a clearer photo or screenshot."; } }
   else if(t.dataset&&t.dataset.reup&&t.files[0]){ reupload(t.dataset.reup,t.files[0]); }
+  else if(t.id==="pFile"&&t.files[0]){ const err=$("#pErr"); err.textContent="";
+    try{ proofImg=await resizeImage(t.files[0],"receipt"); const p=$("#pPrev"); p.src=proofImg; p.style.display="block"; }
+    catch{ proofImg=""; err.textContent="We couldn't read that image. Try a clearer screenshot."; } }
+  else if(t.type==="radio"&&/^q\d+$/.test(t.name)&&quizState){ quizState.ans[+t.name.slice(1)]=+t.value; const n=quizState.ans.filter(a=>a>=0).length; $("#qProg").textContent=`${n} of ${quizState.qs.length} answered`; }
 });
 document.addEventListener("keydown",e=>{
   if(e.key==="Escape"){ closeModal(); const lb=$("#lb"); lb.style.display="none"; lb.textContent=""; }
