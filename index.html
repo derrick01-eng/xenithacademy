@@ -152,6 +152,29 @@ footer a{color:#fff}
 .tl li:before{content:"";position:absolute;left:-25px;top:6px;width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid var(--navy)}
 .tl .d{font-size:14px;color:var(--mute)}
 
+/* announcements strip */
+.annbar{background:var(--mist);overflow:hidden;border-bottom:1px solid var(--line);padding:8px 0}
+.atrack{display:flex;width:max-content;animation:aflow var(--adur,30s) linear infinite}
+.atrack:hover,.atrack.hold{animation-play-state:paused}
+.aset{display:flex;gap:14px;padding-right:14px;align-items:center}
+.atext{display:inline-block;background:var(--red);color:#fff;font-weight:700;border-radius:99px;padding:6px 18px;white-space:nowrap;text-decoration:none}
+.aimg{height:96px;width:auto;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;display:block;max-width:none}
+@keyframes aflow{from{transform:translateX(-50%)}to{transform:translateX(0)}}
+@media (prefers-reduced-motion:reduce){.atrack{animation:none}.annbar{overflow-x:auto}}
+/* top students */
+.ctrack .topc{flex:0 0 min(80vw,300px);scroll-snap-align:start}
+.topc{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.topc.det{padding:16px;border-top:4px solid var(--red)}
+.topc.gfx{display:flex}
+.topc.gfx img{width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block}
+.thead{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+.thead h3{font-size:24px}
+.thead .role{color:var(--red);font-weight:700;font-size:15px}
+.tph{width:72px;height:90px;border-radius:8px;overflow:hidden;background:var(--mist);display:grid;place-items:center;font-family:var(--serif);font-size:34px;color:var(--navy);flex:none}
+.tph img{width:100%;height:100%;object-fit:cover}
+.srow{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.srow b{color:var(--navy)}
+.stotal{display:flex;justify-content:space-between;margin-top:10px;padding:8px 12px;background:var(--navy);color:#fff;border-radius:8px;font-weight:700}
 /* mocks and quizzes */
 .mgroup{margin-top:34px}
 .mgroup>h3{font-size:30px}
@@ -237,7 +260,7 @@ textarea.in{min-height:80px;resize:vertical}
     </div>
     <div class="ticker"><div class="tk" id="tk"></div></div>
   </header>
-  <div id="banner" class="banner" style="display:none"></div>
+  <div id="banner" class="annbar" style="display:none"><div class="atrack" id="aTrack"></div></div>
   <div id="top"></div>
   <main id="viewHome"></main>
   <main id="viewDash" style="display:none"></main>
@@ -307,6 +330,8 @@ const clean = o => JSON.parse(JSON.stringify(o));
 const uid8 = () => Math.random().toString(36).slice(2,9);
 const fmtDate = ts => ts?new Date(ts).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}):"";
 const KIND_LABEL={open:"Open mock",locked:"Request-only mock",quiz:"Online quiz"};
+function groupLinksOf(r){ if(Array.isArray(r.groupLinks)&&r.groupLinks.length) return r.groupLinks; return r.groupLink?[{label:"",url:r.groupLink}]:[]; }
+const joinLabel=l=>l&&l.label?(/^join/i.test(l.label)?l.label:"Join "+l.label):"Join your tutorial group";
 const STATUS = {pending:"Waiting for approval",approved:"Approved",rejected:"Rejected",completed:"Completed",requested:"Requested"};
 
 let carTimers=[];
@@ -334,6 +359,7 @@ function normalizeSite(s){
   s.brand=Object.assign(d.brand,s.brand||{}); s.settings=Object.assign(d.settings,s.settings||{});
   ["team","tutorials","accounts","mocks","contacts"].forEach(k=>{ if(!Array.isArray(s[k])) s[k]=d[k]; });
   s.fonts=Object.assign({heading:"",body:"",sec:{}},s.fonts||{}); s.fonts.sec=s.fonts.sec||{};
+  s.topItems=Array.isArray(s.topItems)?s.topItems:[]; s.topMeta=Object.assign({title:"",sub:""},s.topMeta||{}); s.announce=Array.isArray(s.announce)?s.announce:[];
   return s;
 }
 function demoSite(){
@@ -350,8 +376,8 @@ function demoSite(){
    BACKENDS: demo (in memory) and Firebase
    ========================================================= */
 function demoBackend(){
-  let siteDoc=demoSite(), cfgDoc={groupLinks:{waec:"https://chat.whatsapp.com/sample"},mockLinks:{}}, users={}, cur=null; const cbs=[];
-  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[],proofs:[]};
+  let siteDoc=demoSite(), cfgDoc={groupLinks:{waec:[{label:"WhatsApp group",url:"https://chat.whatsapp.com/sample"},{label:"Telegram group",url:"https://t.me/sample"}]},mockLinks:{}}, users={}, cur=null; const cbs=[];
+  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[],proofs:[],site:[]};
   users["u_student@demo.com"]={name:"Demo Student",phone:"08012345678",email:"student@demo.com"};
   db.regs.push({id:"r1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",phone:"08012345678",tutorialId:"waec",tutorialName:"WAEC",price:"15000",ref:"Paid from GTBank",receipt:DEMO_RECEIPT,status:"pending",createdAt:Date.now()-86400000,updatedAt:Date.now()-86400000});
   db.mockreqs.push({id:"q1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m1",mockName:"JAMB mock exam",status:"requested",createdAt:Date.now()-3600000,updatedAt:Date.now()-3600000});
@@ -359,6 +385,10 @@ function demoBackend(){
   db.quizkeys.push({id:"m3",answers:[1,2,2]});
   db.quizsubs.push({id:"u_student@demo.com_m3",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m3",mockName:"Quick Maths Quiz",answers:[1,0,2],count:3,submittedAt:Date.now()-7200000});
   db.mockacts.push({id:"a1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m2",mockName:"WAEC practice test",kind:"open",openedAt:Date.now()-9000000,proof:DEMO_RECEIPT,proofAt:Date.now()-8500000,scoreText:"68/100"});
+  db.site.push({id:"top",title:"Our top students",sub:"Real results from students we've taught.",items:[
+    {kind:"details",name:"Chidi Okafor",exam:"JAMB 2025",photo:"",image:"",subjects:[{name:"English",score:"78"},{name:"Mathematics",score:"82"},{name:"Physics",score:"75"},{name:"Chemistry",score:"80"}],total:"315/400"},
+    {kind:"graphic",name:"Ada Eze result",exam:"",photo:"",image:DEMO_RECEIPT,subjects:[],total:""}]});
+  db.site.push({id:"announce",items:[{text:"JAMB tutorial classes start Monday. Register now!",image:"",url:""},{text:"",image:DEMO_RECEIPT,url:""},{text:"Free mock exam this Saturday",image:"",url:""}]});
   const fire=()=>cbs.forEach(f=>f(cur?{...cur}:null));
   return {
     mode:"demo",
@@ -426,7 +456,7 @@ function authMsg(e){
   return "Something went wrong. Try again.";
 }
 function resizeImage(file,mode){
-  const P={receipt:{max:1000,fmt:"image/jpeg",q:.62,fill:"#fff"},logo:{max:480,fmt:"image/webp",q:.88,fill:null},photo:{max:360,fmt:"image/jpeg",q:.8,fill:"#fff"}}[mode];
+  const P={receipt:{max:1000,fmt:"image/jpeg",q:.62,fill:"#fff"},logo:{max:480,fmt:"image/webp",q:.88,fill:null},photo:{max:360,fmt:"image/jpeg",q:.8,fill:"#fff"},gfx:{max:1000,fmt:"image/jpeg",q:.74,fill:"#fff"},ann:{max:800,fmt:"image/jpeg",q:.72,fill:"#fff"}}[mode];
   return new Promise((res,rej)=>{
     const img=new Image(), url=URL.createObjectURL(file);
     img.onload=()=>{
@@ -444,7 +474,7 @@ function resizeImage(file,mode){
 
 /* ---------- fonts (free Google Fonts) and design ---------- */
 const FONTS={"Cormorant Garamond":"500;600;700","Source Sans 3":"400;600;700","Playfair Display":"400;600;700;800","Montserrat":"400;600;700;800","Poppins":"400;600;700;800","Inter":"400;600;700;800","Lora":"400;600;700","Merriweather":"400;700","Raleway":"400;600;700;800","Nunito":"400;600;700;800","DM Sans":"400;600;700","Roboto Slab":"400;600;700;800","Oswald":"400;600;700","Space Grotesk":"400;500;600;700","Outfit":"400;600;700;800","Sora":"400;600;700;800","Manrope":"400;600;700;800","Bebas Neue":"","Pacifico":"","Archivo Black":""};
-const DSECS=[["home","Home banner"],["about","About"],["team","Team"],["tutorials","Tutorials"],["mocks","Mock exams"],["contact","Contact"]];
+const DSECS=[["home","Home banner"],["about","About"],["toppers","Top students"],["team","Team"],["tutorials","Tutorials"],["mocks","Mock exams"],["contact","Contact"]];
 const fontsLoaded=new Set();
 function loadFonts(names){
   names.forEach(n=>{ if(!n||!(n in FONTS)||fontsLoaded.has(n)) return; fontsLoaded.add(n);
@@ -464,15 +494,41 @@ function applyDesign(){
 }
 /* sliding carousel for the team: swipe, arrows, auto-advance */
 function startCarousels(){
-  const box=$("#teamBox"); if(!box) return;
-  const tr=box.querySelector(".ctrack"); let pause=0;
-  const stepW=()=>{ const c=tr.querySelector(".pcard"); return c?c.offsetWidth+16:260; };
-  const next=()=>{ if(tr.scrollWidth<=tr.clientWidth+4) return; const end=tr.scrollLeft+tr.clientWidth>=tr.scrollWidth-4; tr.scrollTo({left:end?0:tr.scrollLeft+stepW(),behavior:"smooth"}); };
-  box.querySelector(".cnav.l").onclick=()=>{ pause=Date.now()+8000; tr.scrollTo({left:Math.max(0,tr.scrollLeft-stepW()),behavior:"smooth"}); };
-  box.querySelector(".cnav.r").onclick=()=>{ pause=Date.now()+8000; next(); };
-  ["touchstart","mousedown","wheel"].forEach(ev=>tr.addEventListener(ev,()=>{pause=Date.now()+8000},{passive:true}));
-  tr.addEventListener("mouseenter",()=>{pause=Date.now()+8000});
-  carTimers.push(setInterval(()=>{ if(Date.now()>=pause&&view==="home") next(); },3500));
+  document.querySelectorAll(".cwrap[data-car]").forEach(box=>{
+    const tr=box.querySelector(".ctrack"); if(!tr) return; let pause=0;
+    const stepW=()=>{ const c=tr.firstElementChild; return c?c.offsetWidth+16:260; };
+    const next=()=>{ if(tr.scrollWidth<=tr.clientWidth+4) return; const end=tr.scrollLeft+tr.clientWidth>=tr.scrollWidth-4; tr.scrollTo({left:end?0:tr.scrollLeft+stepW(),behavior:"smooth"}); };
+    box.querySelector(".cnav.l").onclick=()=>{ pause=Date.now()+8000; tr.scrollTo({left:Math.max(0,tr.scrollLeft-stepW()),behavior:"smooth"}); };
+    box.querySelector(".cnav.r").onclick=()=>{ pause=Date.now()+8000; next(); };
+    ["touchstart","mousedown","wheel"].forEach(ev=>tr.addEventListener(ev,()=>{pause=Date.now()+8000},{passive:true}));
+    tr.addEventListener("mouseenter",()=>{pause=Date.now()+8000});
+    carTimers.push(setInterval(()=>{ if(Date.now()>=pause&&view==="home") next(); },3500));
+  });
+}
+
+/* ---------- announcements: a strip that keeps moving ---------- */
+function renderAnnounce(){
+  const box=$("#banner"), tr=$("#aTrack");
+  let items=(site.announce||[]).filter(a=>a.text||safeImg(a.image));
+  if(!items.length&&site.brand.banner) items=[{text:site.brand.banner,image:"",url:""}];
+  if(!items.length){ box.style.display="none"; tr.innerHTML=""; return; }
+  box.style.display="block";
+  const one=items.map(a=>{
+    const u=safeUrl(a.url), im=safeImg(a.image);
+    const inner=(im?`<img class="aimg${u?"":" zoom"}" src="${esc(im)}" alt="${esc(a.text||"Announcement")}">`:"")+(a.text?`<span class="atext">${esc(a.text)}</span>`:"");
+    return u?`<a class="aitem" style="display:flex;gap:10px;align-items:center;text-decoration:none" href="${esc(u)}" target="_blank" rel="noopener">${inner}</a>`:`<span class="aitem" style="display:flex;gap:10px;align-items:center">${inner}</span>`;
+  }).join("");
+  tr.style.animation="none"; tr.innerHTML=`<div class="aset">${one}</div>`;
+  if(!tr._b){ tr._b=1; let t; tr.addEventListener("touchstart",()=>{clearTimeout(t);tr.classList.add("hold")},{passive:true});
+    const rel=()=>{clearTimeout(t);t=setTimeout(()=>tr.classList.remove("hold"),1500)}; tr.addEventListener("touchend",rel,{passive:true}); tr.addEventListener("touchcancel",rel,{passive:true}); }
+  const imgs=[...tr.querySelectorAll("img")];
+  Promise.race([Promise.all(imgs.map(i=>i.complete?1:new Promise(r=>{ i.onload=i.onerror=r; }))),new Promise(r=>setTimeout(r,2000))]).then(()=>{
+    const w=tr.firstElementChild.getBoundingClientRect().width||1;
+    const k=Math.min(12,Math.max(1,Math.ceil((window.innerWidth||360)/w)));
+    const unit=Array(k).fill(one).join("");
+    tr.innerHTML=`<div class="aset">${unit}</div><div class="aset" aria-hidden="true">${unit}</div>`;
+    tr.style.setProperty("--adur",Math.max(12,Math.round(w*k/55))+"s"); tr.style.animation="";
+  });
 }
 
 /* =========================================================
@@ -482,8 +538,8 @@ function renderHeader(){
   const b=site.brand, logo=safeImg(b.logo)||DEFAULT_LOGO;
   $("#brand").innerHTML=`<img src="${esc(logo)}" alt="${esc(b.name)}">`;
   document.title=b.name||"XENITH ACADEMY";
-  const bn=$("#banner"); bn.style.display=b.banner?"block":"none"; bn.textContent=b.banner||"";
-  const items=[["Home","#top"],["About","#about"],["Team","#team"],["Tutorials","#tutorials"],["Mock exams","#mocks"],["Contact","#contact"]];
+  renderAnnounce();
+  const items=[["Home","#top"],["About","#about"],...(site.topItems.length?[["Top students","#toppers"]]:[]),["Team","#team"],["Tutorials","#tutorials"],["Mock exams","#mocks"],["Contact","#contact"]];
   const set=h=>`<div class="tkset"${h?' aria-hidden="true"':""}>${items.map(([l,a])=>`<a class="rib" href="${a}"${h?' tabindex="-1"':""}>${l}</a>`).join("")}</div>`;
   const tk=$("#tk"); tk.innerHTML=set(false)+set(true)+set(true)+set(true)+set(true)+set(true);
   if(!tk._b){ tk._b=1; let t; tk.addEventListener("touchstart",()=>{clearTimeout(t);tk.classList.add("hold")},{passive:true});
@@ -502,6 +558,7 @@ function updateAuthBtn(){
    ========================================================= */
 function renderHome(){
   carTimers.forEach(clearInterval); carTimers=[];
+  renderHeader();
   const b=site.brand, s=site.settings;
   const paras=String(b.about||"").split(/\n\s*\n/).map(x=>x.trim()).filter(Boolean);
   let pullN=0; for(let i=paras.length-1;i>=0&&paras[i].length<110&&pullN<2&&paras.length-pullN>1;i--) pullN++;
@@ -509,6 +566,17 @@ function renderHome(){
   const exams=[...new Set(site.tutorials.map(t=>t.name).filter(Boolean))];
   const acct=id=>site.accounts.find(a=>a.id===id);
   const wa=safeUrl(s.whatsapp);
+  const shift=site.topItems.length>0, tm=site.topMeta||{};
+  const topCard=t=>{
+    if(t.kind==="graphic"){ const im=safeImg(t.image); return im?`<article class="topc gfx"><img class="zoom" src="${esc(im)}" alt="${esc(t.name||"Student result")}"></article>`:""; }
+    const ph=safeImg(t.photo);
+    return `<article class="topc det"><div class="thead"><div class="tph">${ph?`<img src="${esc(ph)}" alt="">`:esc((t.name||"?")[0].toUpperCase())}</div><div><h3>${esc(t.name)}</h3>${t.exam?`<div class="role">${esc(t.exam)}</div>`:""}</div></div>
+      <div>${(t.subjects||[]).filter(x=>x.name).map(x=>`<div class="srow"><span>${esc(x.name)}</span><b>${esc(x.score)}</b></div>`).join("")}</div>${t.total?`<div class="stotal"><span>Total</span><b>${esc(t.total)}</b></div>`:""}</article>`;
+  };
+  const topHTML=shift?`<section class="s alt" id="toppers"><div class="wrap">
+    <div class="sh"><h2>${esc(tm.title||"Our top students")}</h2><p>${esc(tm.sub||"Real results from students we've taught.")}</p></div>
+    <div class="cwrap" data-car="1"><button class="cnav l" aria-label="Previous">‹</button><div class="ctrack">${site.topItems.map(topCard).join("")}</div><button class="cnav r" aria-label="Next">›</button></div>
+  </div></section>`:"";
   const mkG={open:[],locked:[],quiz:[]}; site.mocks.forEach(m=>mkG[kindOf(m)].push(m));
   const mgroup=(title,desc,list,btn,attr)=>list.length?`<div class="mgroup"><h3>${title}</h3><p class="mute">${desc}</p><div class="grid">${list.map(m=>`
       <article class="tcard"><span class="kbadge">${KIND_LABEL[kindOf(m)]}</span><h3>${esc(m.name)}</h3>${m.description?`<p class="desc">${esc(m.description)}</p>`:""}
@@ -531,14 +599,16 @@ function renderHome(){
     ${pull.length?`<div class="pull">${pull.map(p=>`<p>${esc(p)}</p>`).join("")}</div>`:""}
   </div></section>
 
-  <section class="s alt" id="team"><div class="wrap">
+  ${topHTML}
+
+  <section class="${shift?"s":"s alt"}" id="team"><div class="wrap">
     <div class="sh"><h2>Meet the team</h2><p>The mentors who will teach you.</p></div>
-    ${site.team.length?`<div class="cwrap" id="teamBox"><button class="cnav l" aria-label="Previous">‹</button><div class="ctrack">${site.team.map(m=>`
+    ${site.team.length?`<div class="cwrap" id="teamBox" data-car="1"><button class="cnav l" aria-label="Previous">‹</button><div class="ctrack">${site.team.map(m=>`
       <article class="pcard"><div class="pphoto">${safeImg(m.photo)?`<img src="${esc(m.photo)}" alt="">`:esc((m.name||"?")[0].toUpperCase())}</div>
       <div class="pbody"><h3>${esc(m.name)}</h3>${m.role?`<div class="role">${esc(m.role)}</div>`:""}${m.bio?`<p>${esc(m.bio)}</p>`:""}</div></article>`).join("")}</div><button class="cnav r" aria-label="Next">›</button></div>`:`<div class="empty">Our team will be introduced here soon.</div>`}
   </div></section>
 
-  <section class="s" id="tutorials"><div class="wrap">
+  <section class="${shift?"s alt":"s"}" id="tutorials"><div class="wrap">
     <div class="sh"><h2>Tutorials</h2><p>Choose a tutorial, pay, upload your receipt and join your group.</p></div>
     <ol class="steps">
       <li>Choose a tutorial<small>Pick the exam you are preparing for</small></li>
@@ -555,12 +625,12 @@ function renderHome(){
         <button class="btn red" data-reg="${esc(t.id)}">Register</button></article>`; }).join(""):`<div class="empty">Tutorials will be listed here soon.</div>`}</div>
   </div></section>
 
-  <section class="s alt" id="mocks"><div class="wrap">
+  <section class="${shift?"s":"s alt"}" id="mocks"><div class="wrap">
     <div class="sh"><h2>Mock exams</h2><p>Practise like it's the real exam. After each mock, upload your result so you can move on to the next one.</p></div>
     ${mocksHTML}
   </div></section>
 
-  <section class="s" id="contact"><div class="wrap">
+  <section class="${shift?"s alt":"s"}" id="contact"><div class="wrap">
     <div class="sh"><h2>Contact us</h2><p>Questions about payment or classes? Reach out.</p></div>
     <div class="contacts">${site.contacts.map(c=>{ const u=safeUrl(c.url); return `<a ${u?`href="${esc(u)}" target="_blank" rel="noopener"`:""}><small>${esc(c.label)}</small><b>${esc(c.text||c.url)}</b></a>`; }).join("")}
       ${wa?`<a href="${esc(wa)}" target="_blank" rel="noopener"><small>WhatsApp</small><b>Chat with us</b></a>`:""}</div>
@@ -838,7 +908,7 @@ async function showDash(){
     ${regs.length?regs.map(r=>{ const lk=safeUrl(r.groupLink); return `<div class="rcard"><div class="top"><div><h3>${esc(r.tutorialName)}</h3><div class="meta">Sent ${fmtDate(r.createdAt)}${money(r.price)?" - "+money(r.price):""}</div></div><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
       ${r.note?`<div class="note">Message from Xenith: ${esc(r.note)}</div>`:""}
       <div class="acts">${safeImg(r.receipt)?`<img class="rthumb zoom" src="${esc(r.receipt)}" alt="Your receipt (tap to enlarge)">`:""}
-      ${(r.status==="approved"||r.status==="completed")?(lk?`<a class="btn red" href="${esc(lk)}" target="_blank" rel="noopener">Join your tutorial group</a>`:`<span class="mute">Approved. Your group link is coming soon.</span>`):""}
+      ${(r.status==="approved"||r.status==="completed")?(groupLinksOf(r).some(x=>safeUrl(x.url))?groupLinksOf(r).filter(x=>safeUrl(x.url)).map(x=>`<a class="btn red" href="${esc(safeUrl(x.url))}" target="_blank" rel="noopener">${esc(joinLabel(x))}</a>`).join(""):`<span class="mute">Approved. Your group links are coming soon.</span>`):""}
       ${r.status==="pending"?`<span class="mute">We're checking your receipt.</span>`:""}
       ${r.status==="rejected"?`<label class="btn ghost sm">Upload a new receipt<input type="file" accept="image/*" data-reup="${esc(r.id)}" hidden></label>`:""}</div></div>`; }).join(""):`<div class="empty">You haven't registered for a tutorial yet. <a href="#tutorials">See tutorials</a></div>`}</div>
 
@@ -859,8 +929,8 @@ async function reupload(id,file){
    ========================================================= */
 let aProofs=[], aActs=[], aSubs=[], aKeys={}, aQz={}, resFilter="all", resQ="", qbSel="", qbData={};
 let aTab="receipts", aRegs=[], aReqs=[], rFilter="pending", rQ="", qFilter="requested";
-const CONTENT_TABS=["quiz","brand","team","tutorials","accounts","mocks","contacts","settings","design"];
-const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",results:"Results",quiz:"Quiz builder",brand:"Brand",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings",design:"Fonts"};
+const CONTENT_TABS=["quiz","announce","topstudents","brand","team","tutorials","accounts","mocks","contacts","settings","design"];
+const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",results:"Results",quiz:"Quiz builder",brand:"Brand",announce:"Announcements",topstudents:"Top students",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings",design:"Fonts"};
 
 async function showAdmin(){
   view="admin"; $("#site").style.display="none"; $("#admin").style.display="block"; window.scrollTo(0,0);
@@ -912,37 +982,52 @@ setInterval(()=>{ if(view==="admin"&&isAdmin&&(["receipts","mockreqs","results"]
 /* ---- receipts queue ---- */
 function receiptsPanel(){
   const c=s=>aRegs.filter(r=>r.status===s).length;
-  return `${aErr?`<div class="err">${esc(aErr)}</div>`:""}<div style="display:flex;justify-content:flex-end"><button class="btn ghost sm" data-refresh="1">Refresh</button></div><div class="chipbar" id="rChips">${["pending","approved","rejected","completed","all"].map(s=>`<button data-rf="${s}" class="${s===rFilter?"on":""}">${s==="all"?"All":STATUS[s].replace("Waiting for approval","Pending")} (${s==="all"?aRegs.length:c(s)})</button>`).join("")}</div>
+  return `<datalist id="gllabels"><option value="WhatsApp group"><option value="Telegram group"><option value="Discord server"><option value="Class link"></datalist>${aErr?`<div class="err">${esc(aErr)}</div>`:""}<div style="display:flex;justify-content:flex-end"><button class="btn ghost sm" data-refresh="1">Refresh</button></div><div class="chipbar" id="rChips">${["pending","approved","rejected","completed","all"].map(s=>`<button data-rf="${s}" class="${s===rFilter?"on":""}">${s==="all"?"All":STATUS[s].replace("Waiting for approval","Pending")} (${s==="all"?aRegs.length:c(s)})</button>`).join("")}</div>
     <input class="in" id="rSearch" placeholder="Search by name, email or tutorial" value="${esc(rQ)}"><div id="rList"></div>`;
+}
+const aLinkRows={}, aNotes={};
+function glist(tid){ const v=cfg.groupLinks[tid]; if(Array.isArray(v)) return v; if(typeof v==="string"&&v) return [{label:"Group",url:v}]; return []; }
+function rowsFor(r){
+  if(!aLinkRows[r.id]){
+    let rows=[]; if(r.status==="approved"||r.status==="completed") rows=groupLinksOf(r).map(x=>({label:x.label||"",url:x.url||""}));
+    if(!rows.length) rows=glist(r.tutorialId).map(x=>({label:x.label||"",url:x.url||""}));
+    if(!rows.length) rows=[{label:"",url:""}];
+    aLinkRows[r.id]=rows;
+  }
+  return aLinkRows[r.id];
 }
 function drawReceiptList(){
   const q=rQ.trim().toLowerCase();
   const list=aRegs.filter(r=>(rFilter==="all"||r.status===rFilter)&&(!q||[r.studentName,r.email,r.tutorialName,r.phone].join(" ").toLowerCase().includes(q))).sort((a,b)=>b.createdAt-a.createdAt);
-  $("#rList").innerHTML=list.length?list.map(r=>{
-    const link=r.groupLink||cfg.groupLinks[r.tutorialId]||"";
-    return `<div class="item"><div class="hd"><b>${esc(r.studentName)}</b><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
+  $("#rList").innerHTML=list.length?list.map(r=>`<div class="item"><div class="hd"><b>${esc(r.studentName)}</b><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
       <div class="arow"><div><div>${esc(r.email)}</div><div>${esc(r.phone)}</div><div style="margin-top:6px"><b>${esc(r.tutorialName)}</b> ${money(r.price)?"- "+money(r.price):""}</div><div class="hint">Sent ${fmtDate(r.createdAt)}</div>${r.ref?`<div class="hint">Payment note: ${esc(r.ref)}</div>`:""}</div>
       ${safeImg(r.receipt)?`<img class="rthumb zoom" src="${esc(r.receipt)}" alt="Receipt (tap to enlarge)">`:""}</div>
-      <label class="f">Group link for this student</label><input class="in" id="lk-${esc(r.id)}" value="${esc(link)}" placeholder="https://chat.whatsapp.com/...">
-      <label class="f">Message to the student (optional)</label><input class="in" id="nt-${esc(r.id)}" value="${esc(r.note||"")}">
+      <label class="f">Group links for this student</label>
+      ${rowsFor(r).map((g,j)=>`<div class="orow"><input class="in" list="gllabels" style="max-width:150px" data-rl="${esc(r.id)}:${j}:label" value="${esc(g.label)}" placeholder="WhatsApp group"><input class="in" data-rl="${esc(r.id)}:${j}:url" value="${esc(g.url)}" placeholder="https://..."><button class="btn danger sm" data-rldel="${esc(r.id)}:${j}">Remove</button></div>`).join("")}
+      <button class="btn ghost sm" data-rladd="${esc(r.id)}">Add another link</button>
+      <label class="f">Message to the student (optional)</label><input class="in" id="nt-${esc(r.id)}" data-rn="${esc(r.id)}" value="${esc(aNotes[r.id]!==undefined?aNotes[r.id]:(r.note||""))}">
       <div class="acts" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-        ${r.status!=="approved"&&r.status!=="completed"?`<button class="btn red sm" data-ra="approve" data-id="${esc(r.id)}">Approve and send link</button>`:`<button class="btn sm" data-ra="update" data-id="${esc(r.id)}">Update link or message</button>`}
+        ${r.status!=="approved"&&r.status!=="completed"?`<button class="btn red sm" data-ra="approve" data-id="${esc(r.id)}">Approve and send links</button>`:`<button class="btn sm" data-ra="update" data-id="${esc(r.id)}">Update links or message</button>`}
         ${r.status==="approved"?`<button class="btn ghost sm" data-ra="complete" data-id="${esc(r.id)}">Mark as completed</button>`:""}
         ${r.status!=="rejected"?`<button class="btn danger sm" data-ra="reject" data-id="${esc(r.id)}">Reject</button>`:""}
-        <button class="btn danger sm" data-ra="delete" data-id="${esc(r.id)}">Delete</button></div></div>`; }).join(""):`<div class="empty" style="margin-top:12px">Nothing here.</div>`;
+        <button class="btn danger sm" data-ra="delete" data-id="${esc(r.id)}">Delete</button></div></div>`).join(""):`<div class="empty" style="margin-top:12px">Nothing here.</div>`;
 }
 async function regAction(act,id){
   const r=aRegs.find(x=>x.id===id); if(!r) return;
-  const link=($("#lk-"+id)||{}).value||"", note=($("#nt-"+id)||{}).value||"";
+  const rows=rowsFor(r).map(x=>({label:(x.label||"").trim(),url:(x.url||"").trim()})).filter(x=>x.url);
+  const note=($("#nt-"+id)||{}).value||"";
   const patch={updatedAt:Date.now(),note};
   if(act==="delete"){ if(!confirm("Delete this registration permanently?")) return; await B.del("regs",id); }
   else{
-    if(act==="approve"||act==="update"){ if(act==="approve"&&!link&&!confirm("No group link added. Approve anyway? The student will see that the link is coming soon.")) return; patch.groupLink=link.trim(); if(act==="approve") patch.status="approved"; }
-    if(act==="reject"){ patch.status="rejected"; patch.groupLink=""; if(!note&&!confirm("Reject without a message? A short reason helps the student.")) return; }
+    if(act==="approve"||act==="update"){
+      if(act==="approve"&&!rows.length&&!confirm("No group link added. Approve anyway? The student will see that the links are coming soon.")) return;
+      patch.groupLinks=rows; patch.groupLink=rows[0]?rows[0].url:""; if(act==="approve") patch.status="approved"; }
+    if(act==="reject"){ if(!note&&!confirm("Reject without a message? A short reason helps the student.")) return; patch.status="rejected"; patch.groupLinks=[]; patch.groupLink=""; }
     if(act==="complete") patch.status="completed";
     await B.upd("regs",id,patch);
   }
-  toast(act==="delete"?"Deleted.":act==="approve"?"Approved. The student can now see the link.":act==="reject"?"Rejected.":"Updated.");
+  delete aLinkRows[id]; delete aNotes[id];
+  toast(act==="delete"?"Deleted.":act==="approve"?"Approved. The student can now see the links.":act==="reject"?"Rejected.":"Updated.");
   await loadAdminLists(); renderAdmin();
 }
 
@@ -1081,20 +1166,40 @@ function contentPanel(){
       <label class="f">Short line under the headline</label><textarea class="in" data-b="tagline">${esc(b.tagline)}</textarea>
       <label class="f">About text (leave a blank line between paragraphs)</label><textarea class="in" data-b="about" style="min-height:260px">${esc(b.about)}</textarea>
       <p class="hint">The last short lines are shown as a highlighted quote.</p>
-      <label class="f">Announcement bar (optional, shows at the top of every page)</label><input class="in" data-b="banner" value="${esc(b.banner)}" placeholder="e.g. JAMB class registration closes Friday">
+      <p class="hint">Announcements (text and images that scroll across the top) now live in the Announcements tab.</p>
       <label class="f">Logo</label><div class="lg"><img class="lp" style="width:96px" src="${esc(safeImg(b.logo)||DEFAULT_LOGO)}" alt="">
         <div style="flex:1"><input type="file" accept="image/*" data-up="logo" data-ul="brand" data-ui="0" data-uf="logo">${safeImg(b.logo)?`<div><button class="btn danger sm" style="margin-top:6px" data-rm="brand|0|logo">Use the default logo</button></div>`:""}</div></div>
       <p class="hint">Upload a clean logo image (PNG with a white or transparent background works best).</p></div>`,
+    announce:()=>`<div class="item"><b style="color:var(--navy)">Scrolling announcements</b><p class="hint">Text and images added here keep moving across the top of the site for every visitor. Tap an image to enlarge it, or add a link to open a page instead.</p></div>`
+      +listPanel("announce","Announcement",(it,i)=>`<label class="f">Text (optional)</label>${inp("announce",i,"text",it.text,"e.g. JAMB classes start Monday")}
+      ${upField("Image (optional)","announce",i,"image","ann",it.image,"A flyer or banner. It shows about 100 px tall and moves across the screen.")}
+      <label class="f">Link when tapped (optional)</label>${inp("announce",i,"url",it.url,"https://...")}`,{text:"",image:"",url:""}),
+    topstudents:()=>{ const tm=S.topMeta; return `<div class="item"><label class="f">Section title</label><input class="in" data-tm="title" value="${esc(tm.title)}" placeholder="Our top students">
+      <label class="f">Short line under the title</label><input class="in" data-tm="sub" value="${esc(tm.sub)}" placeholder="Real results from students we've taught.">
+      <p class="hint">This section only appears on the site once you add at least one student. It sits after About and slides automatically.</p></div>`
+      +listPanel("topItems","Student",(it,i)=>{ const g=it.kind==="graphic"; return `<label class="f">How to show this student</label>
+        <select class="in" data-l="topItems" data-i="${i}" data-k="kind"><option value="details"${!g?" selected":""}>Name, photo and scores typed here</option><option value="graphic"${g?" selected":""}>A ready-made graphic (image)</option></select>
+        ${g?`${upField("Result graphic","topItems",i,"image","gfx",it.image,"Upload the graphic with the student's name and scores. A square or portrait image works best.")}<label class="f">Name (optional, for screen readers)</label>${inp("topItems",i,"name",it.name)}`
+        :`<label class="f">Student name</label>${inp("topItems",i,"name",it.name)}
+        ${upField("Passport photo","topItems",i,"photo","photo",it.photo,"A clear head-and-shoulders photo.")}
+        <label class="f">Exam and year</label>${inp("topItems",i,"exam",it.exam,"e.g. JAMB 2025")}
+        <label class="f">Subjects and scores</label>
+        ${(it.subjects||[]).map((x,j)=>`<div class="orow"><input class="in" data-sj="${i}:${j}:name" value="${esc(x.name)}" placeholder="Subject"><input class="in" style="max-width:110px" data-sj="${i}:${j}:score" value="${esc(x.score)}" placeholder="Score"><button class="btn danger sm" data-sjdel="${i}:${j}">Remove</button></div>`).join("")}
+        <button class="btn ghost sm" data-sjadd="${i}">Add a subject</button>
+        <label class="f">Total or aggregate (optional)</label>${inp("topItems",i,"total",it.total,"e.g. 315/400")}`}`; },
+        {kind:"details",name:"",exam:"",photo:"",image:"",subjects:[{name:"",score:""}],total:""}); },
     team:()=>listPanel("team","Team member",(it,i)=>`<label class="f">Name</label>${inp("team",i,"name",it.name)}
       ${upField("Photo","team",i,"photo","photo",it.photo,"A square photo works best.")}
       <label class="f">Role</label>${inp("team",i,"role",it.role,"e.g. Lead tutor, Mathematics")}
       <label class="f">Short bio</label><textarea class="in" data-l="team" data-i="${i}" data-k="bio">${esc(it.bio)}</textarea>`,{name:"",role:"",bio:"",photo:""}),
-    tutorials:()=>listPanel("tutorials","Tutorial",(it,i)=>`<label class="f">Name</label>${inp("tutorials",i,"name",it.name,"e.g. JAMB")}
+    tutorials:()=>`<datalist id="gllabels"><option value="WhatsApp group"><option value="Telegram group"><option value="Discord server"><option value="Class link"></datalist>`+listPanel("tutorials","Tutorial",(it,i)=>`<label class="f">Name</label>${inp("tutorials",i,"name",it.name,"e.g. JAMB")}
       <label class="f">Description</label><textarea class="in" data-l="tutorials" data-i="${i}" data-k="description">${esc(it.description)}</textarea>
       <label class="f">Price (numbers only, leave empty for "Price on request")</label><input class="in" type="number" min="0" step="any" data-l="tutorials" data-i="${i}" data-k="price" value="${esc(it.price)}">
       <label class="f">Schedule or duration</label>${inp("tutorials",i,"schedule",it.schedule,"e.g. Mon, Wed and Fri, 5pm")}
       <label class="f">Account students pay into</label><select class="in" data-l="tutorials" data-i="${i}" data-k="accountId"><option value="">No account yet</option>${S.accounts.map(a=>`<option value="${esc(a.id)}"${a.id===it.accountId?" selected":""}>${esc(a.bank)} - ${esc(a.accountNumber)}</option>`).join("")}</select>
-      <label class="f">Group link (private, only approved students see it)</label><input class="in" data-cfg="groupLinks" data-ck="${esc(it.id)}" value="${esc(cfg.groupLinks[it.id]||"")}" placeholder="https://chat.whatsapp.com/...">`,{id:"t"+uid8(),name:"",description:"",price:"",schedule:"",accountId:""}),
+      <label class="f">Group links (private: only approved students see them)</label>
+      ${glist(it.id).map((g,j)=>`<div class="orow"><input class="in" list="gllabels" style="max-width:150px" data-gl="${esc(it.id)}:${j}:label" value="${esc(g.label)}" placeholder="WhatsApp group"><input class="in" data-gl="${esc(it.id)}:${j}:url" value="${esc(g.url)}" placeholder="https://..."><button class="btn danger sm" data-gldel="${esc(it.id)}:${j}">Remove</button></div>`).join("")}
+      <button class="btn ghost sm" data-gladd="${esc(it.id)}">Add a group link (WhatsApp, Telegram...)</button>`,{id:"t"+uid8(),name:"",description:"",price:"",schedule:"",accountId:""}),
     accounts:()=>listPanel("accounts","Account",(it,i)=>`<label class="f">Bank</label>${inp("accounts",i,"bank",it.bank)}
       <label class="f">Account name</label>${inp("accounts",i,"accountName",it.accountName)}
       <label class="f">Account number</label>${inp("accounts",i,"accountNumber",it.accountNumber)}
@@ -1133,7 +1238,12 @@ function bindAdmin(){
   const root=$("#aPanel");
   root.oninput=e=>{
     const t=e.target, d=t.dataset;
-    if(d.qq!==undefined){ const qd=qbData[qbSel]; qd.questions[+d.qq].q=t.value; qd.dirty=true; markDirty(); }
+    if(d.tm){ site.topMeta[d.tm]=t.value; markDirty(); }
+    else if(d.sj){ const [i,j,f]=d.sj.split(":"); site.topItems[+i].subjects[+j][f]=t.value; markDirty(); }
+    else if(d.gl){ const [tid,j,f]=d.gl.split(":"); if(!Array.isArray(cfg.groupLinks[tid])) cfg.groupLinks[tid]=glist(tid).map(x=>({...x})); cfg.groupLinks[tid][+j][f]=t.value; markDirty(); }
+    else if(d.rl){ const [rid,j,f]=d.rl.split(":"); aLinkRows[rid][+j][f]=t.value; }
+    else if(d.rn){ aNotes[d.rn]=t.value; }
+    else if(d.qq!==undefined){ const qd=qbData[qbSel]; qd.questions[+d.qq].q=t.value; qd.dirty=true; markDirty(); }
     else if(d.qo!==undefined){ const [i,j]=d.qo.split(":").map(Number), qd=qbData[qbSel]; qd.questions[i].options[j]=t.value; qd.dirty=true; markDirty(); }
     else if(d.qc!==undefined){ const [i,j]=d.qc.split(":").map(Number), qd=qbData[qbSel]; qd.questions[i].correct=j; qd.dirty=true; markDirty(); }
     else if(t.id==="rSq"){ resQ=t.value; drawResults(); }
@@ -1153,12 +1263,18 @@ function bindAdmin(){
       catch{ $("#saveMsg").textContent="Could not use that image. Try a PNG or JPG."; }
     }
     if(t.dataset.l==="tutorials"&&t.dataset.k==="accountId") markDirty();
-    if(t.dataset.l==="mocks"&&t.dataset.k==="kind") renderAdmin();
+    if((t.dataset.l==="mocks"||t.dataset.l==="topItems")&&t.dataset.k==="kind") renderAdmin();
     if(t.dataset.qbsel!==undefined){ qbSel=t.value; renderAdmin(); }
   };
   root.onclick=async e=>{
     const b=e.target.closest("button"); if(!b) return; const d=b.dataset;
     if(d.refresh){ await refreshAdmin(true); }
+    else if(d.sjadd!==undefined){ site.topItems[+d.sjadd].subjects.push({name:"",score:""}); markDirty(); renderAdmin(); }
+    else if(d.sjdel){ const [i,j]=d.sjdel.split(":").map(Number); site.topItems[i].subjects.splice(j,1); markDirty(); renderAdmin(); }
+    else if(d.gladd){ if(!Array.isArray(cfg.groupLinks[d.gladd])) cfg.groupLinks[d.gladd]=glist(d.gladd).map(x=>({...x})); cfg.groupLinks[d.gladd].push({label:"",url:""}); markDirty(); renderAdmin(); }
+    else if(d.gldel){ const [tid,j]=d.gldel.split(":"); if(!Array.isArray(cfg.groupLinks[tid])) cfg.groupLinks[tid]=glist(tid).map(x=>({...x})); cfg.groupLinks[tid].splice(+j,1); markDirty(); renderAdmin(); }
+    else if(d.rladd){ aLinkRows[d.rladd].push({label:"",url:""}); drawReceiptList(); }
+    else if(d.rldel){ const [rid,j]=d.rldel.split(":"); aLinkRows[rid].splice(+j,1); if(!aLinkRows[rid].length) aLinkRows[rid].push({label:"",url:""}); drawReceiptList(); }
     else if(d.rsf){ resFilter=d.rsf; renderAdmin(); }
     else if(d.rdel){ const k=d.rdel.indexOf(":"), coll=d.rdel.slice(0,k), id=d.rdel.slice(k+1); if(confirm("Delete this entry?")){ await B.del(coll,id); for(const q of aProofs.filter(q=>q.refColl===coll&&q.refId===id)){ try{ await B.del("proofs",q.id); }catch(e){} } await loadAdminLists(); renderAdmin(); toast("Deleted."); } }
     else if(d.qb){ qbSel=d.qb; aTab="quiz"; renderAdmin(); }
@@ -1170,15 +1286,17 @@ function bindAdmin(){
     else if(d.odel){ const [i,j]=d.odel.split(":").map(Number), qd=qbData[qbSel], q=qd.questions[i]; if(q.options.length<=2) toast("A question needs at least two options."); else { q.options.splice(j,1); if(q.correct===j) q.correct=-1; else if(q.correct>j) q.correct--; qd.dirty=true; markDirty(); renderAdmin(); } }
     else if(d.rf){ rFilter=d.rf; renderAdmin(); }
     else if(d.qf){ qFilter=d.qf; renderAdmin(); }
-    else if(d.ra){ b.disabled=true; await regAction(d.ra,d.id); }
-    else if(d.qa){ b.disabled=true; await mockAction(d.qa,d.id); }
+    else if(d.ra){ b.disabled=true; await regAction(d.ra,d.id); b.disabled=false; }
+    else if(d.qa){ b.disabled=true; await mockAction(d.qa,d.id); b.disabled=false; }
     else if(d.add){ site[d.add].push(JSON.parse(d.blank)); markDirty(); renderAdmin(); }
     else if(d.del){ const [k,i]=d.del.split(":"); if(confirm("Delete this?")){ site[k].splice(+i,1); markDirty(); renderAdmin(); } }
     else if(d.mv){ const [k,i,dir]=d.mv.split(":"), a=site[k], j=+i+ +dir; if(j>=0&&j<a.length){ [a[+i],a[j]]=[a[j],a[+i]]; markDirty(); renderAdmin(); } }
     else if(d.rm){ const [ul,ui,uf]=d.rm.split("|"); targetOf(ul,ui)[uf]=""; markDirty(); renderAdmin(); }
   };
 }
-function usageBytes(){ return JSON.stringify(site).length; }
+function mainDoc(){ const m=clean(site); delete m.topItems; delete m.topMeta; delete m.announce; return m; }
+function topDoc(){ return {items:site.topItems,title:site.topMeta.title,sub:site.topMeta.sub,updatedAt:Date.now()}; }
+function usageBytes(){ if(aTab==="topstudents") return JSON.stringify(topDoc()).length; if(aTab==="announce") return JSON.stringify(site.announce).length; return JSON.stringify(mainDoc()).length; }
 function updateMeter(){
   const m=$("#meter"); if(!m) return; const n=usageBytes();
   m.textContent=`Storage used: ${Math.round(n/1024)} KB of about 1000 KB`+(n>1000000?" (too much: remove or shrink some images)":n>800000?" (getting full)":"");
@@ -1188,9 +1306,10 @@ function markDirty(){ $("#saveMsg").textContent="Unsaved changes. Press Save and
 async function saveAll(){
   const msg=$("#saveMsg"), btn=$("#saveBtn"); btn.disabled=true; msg.textContent="Saving...";
   try{
-    if(JSON.stringify(site).length>1000000){ msg.textContent="Too much image data to save. Remove or shrink some images."; btn.disabled=false; return; }
+    if([JSON.stringify(mainDoc()).length,JSON.stringify(topDoc()).length,JSON.stringify(site.announce).length].some(n=>n>1000000)){ msg.textContent="Too much image data to save. Remove or shrink some images."; btn.disabled=false; return; }
     const bad=validateQb(); if(bad){ msg.textContent=bad; btn.disabled=false; return; }
-    await B.saveSite(site); await B.saveCfg(cfg);
+    await B.saveSite(mainDoc()); await B.saveCfg(cfg);
+    await B.set("site","top",topDoc()); await B.set("site","announce",{items:site.announce,updatedAt:Date.now()});
     for(const [id,qd] of Object.entries(qbData)){
       if(!qd.dirty) continue;
       await B.set("quizzes",id,{questions:qd.questions.map(q=>({q:q.q.trim(),options:q.options.map(o=>o.trim())})),updatedAt:Date.now()});
@@ -1270,6 +1389,11 @@ window.addEventListener("hashchange",route);
   try{ B = FIREBASE_CONFIG ? await firebaseBackend() : demoBackend(); }
   catch(e){ console.warn(e); B=demoBackend(); }
   try{ site=normalizeSite(await B.getSite()); }catch(e){ console.warn(e); site=normalizeSite(null); }
+  try{
+    const [tp,an]=await Promise.all([B.get("site","top").catch(()=>null),B.get("site","announce").catch(()=>null)]);
+    if(tp){ site.topItems=tp.items||[]; site.topMeta={title:tp.title||"",sub:tp.sub||""}; }
+    if(an) site.announce=an.items||[];
+  }catch(e){ console.warn(e); }
   B.onAuth(async u=>{
     me=u; isAdmin=!!(u&&ADMIN_EMAILS.map(x=>x.toLowerCase()).includes((u.email||"").toLowerCase())); profile=null;
     if(me){ try{ profile=await B.getProfile(me.uid); }catch{} if(profile&&profile.name) me.name=profile.name; }
