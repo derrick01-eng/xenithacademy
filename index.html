@@ -152,6 +152,8 @@ footer a{color:#fff}
 .tl li:before{content:"";position:absolute;left:-25px;top:6px;width:12px;height:12px;border-radius:50%;background:#fff;border:3px solid var(--navy)}
 .tl .d{font-size:14px;color:var(--mute)}
 
+.chkrow{display:flex;flex-wrap:wrap;gap:6px 16px;margin:6px 0}
+.chk{display:flex;align-items:center;gap:6px;font-size:15px}
 /* announcements strip */
 .annbar{background:var(--mist);overflow:hidden;border-bottom:1px solid var(--line);padding:8px 0}
 .atrack{display:flex;width:max-content;animation:aflow var(--adur,30s) linear infinite}
@@ -337,6 +339,16 @@ const STATUS = {pending:"Waiting for approval",approved:"Approved",rejected:"Rej
 let carTimers=[];
 let B=null, site=null, cfg=null, me=null, isAdmin=false, profile=null, view=null;
 const kindOf = m => ["open","locked","quiz"].includes(m&&m.kind)?m.kind:"locked";
+const whoOf = m => m.who||(m.paidOnly===true?"paid":(m.paidOnly===false?"any":(kindOf(m)==="locked"&&site.settings.mockNeedsPayment?"paid":"any")));
+const tutName = id => (site.tutorials.find(t=>t.id===id)||{}).name||id;
+const approvedRegs = regs => regs.filter(r=>r.status==="approved"||r.status==="completed");
+function allowedFor(m,regs){
+  const ok=approvedRegs(regs), w=whoOf(m);
+  if(w==="any") return {ok:true};
+  if(w==="paid") return ok.length?{ok:true}:{ok:false,why:"paid"};
+  const ids=m.onlyTut||[]; return ok.some(r=>ids.includes(r.tutorialId))?{ok:true}:{ok:false,why:"only",ids};
+}
+function autoLinkFor(m,regs){ for(const r of approvedRegs(regs)){ const x=(r.mockAccess||[]).find(y=>y.mockId===m.id&&safeUrl(y.link)); if(x) return safeUrl(x.link); } return ""; }
 const needPaid = m => m.paidOnly!==undefined?!!m.paidOnly:(kindOf(m)==="locked"&&!!site.settings.mockNeedsPayment);
 const money = n => { if(n===""||n==null||isNaN(Number(n))) return ""; return (site.settings.currency||"₦")+Number(n).toLocaleString("en-NG"); };
 
@@ -377,8 +389,10 @@ function demoSite(){
    ========================================================= */
 function demoBackend(){
   let siteDoc=demoSite(), cfgDoc={groupLinks:{waec:[{label:"WhatsApp group",url:"https://chat.whatsapp.com/sample"},{label:"Telegram group",url:"https://t.me/sample"}]},mockLinks:{}}, users={}, cur=null; const cbs=[];
-  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[],proofs:[],site:[]};
-  users["u_student@demo.com"]={name:"Demo Student",phone:"08012345678",email:"student@demo.com"};
+  const db={regs:[],mockreqs:[],mockacts:[],quizsubs:[],quizzes:[],quizkeys:[],proofs:[],site:[],meta:[{id:"counter",n:1,prefix:"ZOT"}]};
+  const claimDemo=async uid=>{ let c=db.meta.find(x=>x.id==="counter"); if(!c){ c={id:"counter",n:0,prefix:"ZOT"}; db.meta.push(c); } c.n++; const regNo=(c.prefix||"ZOT")+c.n; users[uid]=Object.assign(users[uid]||{},{regNo,regAt:Date.now()}); return regNo; };
+  users["u_student@demo.com"]={name:"Demo Student",phone:"08012345678",email:"student@demo.com",createdAt:Date.now()-9*86400000,regNo:"ZOT1"};
+  users["u_legacy@demo.com"]={name:"Old Student",phone:"07000000000",email:"legacy@demo.com",createdAt:Date.now()-20*86400000};
   db.regs.push({id:"r1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",phone:"08012345678",tutorialId:"waec",tutorialName:"WAEC",price:"15000",ref:"Paid from GTBank",receipt:DEMO_RECEIPT,status:"pending",createdAt:Date.now()-86400000,updatedAt:Date.now()-86400000});
   db.mockreqs.push({id:"q1",uid:"u_student@demo.com",email:"student@demo.com",studentName:"Demo Student",mockId:"m1",mockName:"JAMB mock exam",status:"requested",createdAt:Date.now()-3600000,updatedAt:Date.now()-3600000});
   db.quizzes.push({id:"m3",questions:[{q:"What is 7 x 8?",options:["54","56","58","64"]},{q:"Solve 2x + 6 = 14. What is x?",options:["2","3","4","5"]},{q:"What is 15% of 200?",options:["15","20","30","45"]}]});
@@ -395,13 +409,14 @@ function demoBackend(){
     async getSite(){ return clean(siteDoc); }, async saveSite(d){ siteDoc=clean(d); },
     async getCfg(){ return clean(cfgDoc); }, async saveCfg(d){ cfgDoc=clean(d); },
     onAuth(cb){ cbs.push(cb); cb(cur); },
-    async signUp(email,pw,name,phone){ cur={uid:"u_"+email,email,name}; users[cur.uid]={name,phone,email}; fire(); return {...cur}; },
+    async signUp(email,pw,name,phone){ const uid="u_"+email; cur={uid,email,name}; users[uid]=Object.assign(users[uid]||{},{name,phone,email,createdAt:Date.now()}); fire(); const regNo=await claimDemo(uid); return {...cur,regNo}; },
+    async claimRegNo(uid,fields){ users[uid]=Object.assign(users[uid]||{},fields||{}); return claimDemo(uid); },
     async signIn(email){ const id="u_"+email; cur={uid:id,email,name:(users[id]||{}).name||email.split("@")[0]}; fire(); return {...cur}; },
     async signOut(){ cur=null; fire(); }, async reset(){},
     async getProfile(uid){ return users[uid]?{...users[uid]}:null; }, async setProfile(uid,o){ users[uid]=Object.assign(users[uid]||{},o); },
-    async listBy(c,uid){ return clean(db[c].filter(x=>x.uid===uid)); }, async listAll(c){ return clean(db[c]); },
+    async listBy(c,uid){ return clean(db[c].filter(x=>x.uid===uid)); }, async listAll(c){ if(c==="users") return Object.entries(users).map(([id,u])=>({id,...clean(u)})); return clean(db[c]); },
     async add(c,o){ const id="d"+uid8(); db[c].push({...clean(o),id}); return id; },
-    async upd(c,id,p){ Object.assign(db[c].find(x=>x.id===id),clean(p)); },
+    async upd(c,id,p){ if(c==="users"){ Object.assign(users[id],clean(p)); return; } Object.assign(db[c].find(x=>x.id===id),clean(p)); },
     async del(c,id){ db[c]=db[c].filter(x=>x.id!==id); },
     async get(c,id){ const r=db[c].find(x=>x.id===id); return r?clean(r):null; },
     async set(c,id,o){ const i=db[c].findIndex(x=>x.id===id); const v={...clean(o),id}; if(i>=0) db[c][i]=v; else db[c].push(v); }
@@ -423,8 +438,18 @@ async function firebaseBackend(){
     async signUp(email,pw,name,phone){
       const c=await au.createUserWithEmailAndPassword(auth,email,pw);
       try{ await au.updateProfile(c.user,{displayName:name}); }catch(e){ console.warn(e); }
-      try{ await fs.setDoc(fs.doc(db,"users",c.user.uid),{name,phone,email,createdAt:Date.now()}); }catch(e){ console.warn(e); }
-      return {uid:c.user.uid,email:c.user.email,name};
+      let regNo=""; try{ regNo=await this.claimRegNo(c.user.uid,{name,phone,email,createdAt:Date.now()}); }catch(e){ console.warn(e); }
+      return {uid:c.user.uid,email:c.user.email,name,regNo};
+    },
+    async claimRegNo(uid,fields){
+      return fs.runTransaction(db,async tx=>{
+        const cref=fs.doc(db,"meta","counter"), cs=await tx.get(cref); let n,prefix;
+        if(cs.exists()){ prefix=cs.data().prefix||"ZOT"; n=(cs.data().n||0)+1; tx.update(cref,{n}); }
+        else{ prefix="ZOT"; n=1; tx.set(cref,{n:1,prefix:"ZOT"}); }
+        const regNo=prefix+n;
+        tx.set(fs.doc(db,"users",uid),{...(fields||{}),regNo,regAt:Date.now()},{merge:true});
+        return regNo;
+      });
     },
     signIn:(e,p)=>au.signInWithEmailAndPassword(auth,e,p),
     signOut:()=>au.signOut(auth),
@@ -580,6 +605,7 @@ function renderHome(){
   const mkG={open:[],locked:[],quiz:[]}; site.mocks.forEach(m=>mkG[kindOf(m)].push(m));
   const mgroup=(title,desc,list,btn,attr)=>list.length?`<div class="mgroup"><h3>${title}</h3><p class="mute">${desc}</p><div class="grid">${list.map(m=>`
       <article class="tcard"><span class="kbadge">${KIND_LABEL[kindOf(m)]}</span><h3>${esc(m.name)}</h3>${m.description?`<p class="desc">${esc(m.description)}</p>`:""}
+      ${(()=>{ const onl=(m.onlyTut||[]).map(tutName).join(", "), auto=(m.autoTut||[]).map(tutName).join(", "); return (whoOf(m)==="only"&&onl?`<p class="hint">For students of ${esc(onl)}</p>`:"")+(kindOf(m)==="locked"&&auto?`<p class="hint">Opens automatically for students of ${esc(auto)}</p>`:""); })()}
       <button class="btn red" ${attr}="${esc(m.id)}">${btn}</button></article>`).join("")}</div></div>`:"";
   const mocksHTML=(mgroup("Open mocks","Take these right away. Log in, open the link, then upload a screenshot of your result.",mkG.open,"Open mock","data-mopen")
     +mgroup("Request-only mocks","Request access and we'll approve it and send the link to your dashboard.",mkG.locked,"Request access","data-mock")
@@ -643,7 +669,7 @@ function renderHome(){
 /* =========================================================
    AUTH MODAL
    ========================================================= */
-let authMode="login", afterAuth=null;
+let authMode="login", afterAuth=null, signingUp=false;
 function openAuth(after,mode){
   afterAuth=after||null; authMode=mode||"login";
   modal(`<h2>Student account</h2><p class="hint" style="margin:0">Log in to register, see your group links and request mock exams.</p>
@@ -674,10 +700,17 @@ async function doAuth(){
     if(authMode==="signup"){
       const name=($("#aName").value||"").trim(), phone=($("#aPhone").value||"").trim();
       if(!name||!phone){ err.textContent="Enter your full name and phone number."; go.disabled=false; return; }
-      const u=await B.signUp(email,pass,name,phone); if(u&&u.name&&me) me.name=u.name;
+      signingUp=true; let u; try{ u=await B.signUp(email,pass,name,phone); } finally{ signingUp=false; }
+      if(u&&u.name&&me) me.name=u.name;
+      try{ profile=await B.getProfile(u.uid); }catch(e){}
+      if(u&&u.regNo){ welcomeModal(u.regNo,name); return; }
     } else await B.signIn(email,pass);
     const cb=afterAuth; afterAuth=null; closeModal(); if(cb) setTimeout(cb,60);
   }catch(e){ err.textContent=authMsg(e); go.disabled=false; }
+}
+function welcomeModal(regNo,name){
+  modal(`<h2>Welcome, ${esc((name||"").split(" ")[0])}</h2><p style="margin:0">Your registration number is</p><div class="qres"><b>${esc(regNo)}</b></div>
+    <p class="hint">Keep it safe. You'll also find it on your dashboard.</p><button class="btn red" style="width:100%" id="wGo">Continue</button>`);
 }
 async function doForgot(){
   const email=($("#aEmail").value||"").trim(), err=$("#aErr");
@@ -742,6 +775,10 @@ async function unfinishedNames(){
   return [...acts.filter(a=>!has("mockacts",a)).map(a=>a.mockName),...reqs.filter(r=>r.status==="approved"&&!has("mockreqs",r)).map(r=>r.mockName)];
 }
 function blockedModal(names){ modal(`<h2>One more step</h2><p>Before you start another mock, upload a screenshot of your result for <b>${names.map(esc).join(", ")}</b>.</p><a class="btn red" style="width:100%" href="#dashboard" id="gDash">Go to my dashboard</a>`); }
+function deniedModal(m,al){
+  if(al.why==="only") modal(`<h2>Not open to your tutorial</h2><p>This one is for students of <b>${esc((al.ids||[]).map(tutName).join(", "))}</b>. Register for one of them and, once your payment is approved, you can take it.</p><a class="btn red" style="width:100%" href="#tutorials" id="gDash">See tutorials</a>`);
+  else paidModal();
+}
 function paidModal(){ modal(`<h2>Tutorial payment needed</h2><p>This mock opens once your tutorial payment has been approved.</p><a class="btn red" style="width:100%" href="#tutorials" id="gDash">See tutorials</a>`); }
 function studentOnly(){ if(isAdmin){ toast("You're logged in as admin. Use a student account to take mocks."); return false; } return true; }
 
@@ -749,6 +786,9 @@ function studentOnly(){ if(isAdmin){ toast("You're logged in as admin. Use a stu
 async function openMock(mid){
   if(!me) return openAuth(()=>openMock(mid));
   if(!studentOnly()) return;
+  if(mid){ const m0=site.mocks.find(x=>x.id===mid);
+    if(m0){ const regs0=await B.listBy("regs",me.uid).catch(()=>[]), al0=allowedFor(m0,regs0); if(!al0.ok) return deniedModal(m0,al0);
+      const auto=autoLinkFor(m0,regs0); if(auto) return openAutoMock(m0,auto); } }
   const list=site.mocks.filter(m=>kindOf(m)==="locked");
   if(!list.length) return toast("No request-only mocks are available yet.");
   mockPick=mid||"";
@@ -761,7 +801,7 @@ async function submitMock(){
   if(!mockPick){ err.textContent="Choose a mock exam first."; return; }
   const m=site.mocks.find(x=>x.id===mockPick); go.disabled=true;
   try{
-    if(needPaid(m)&&!(await hasPaid())){ err.textContent="This mock opens once your tutorial payment is approved. Register for a tutorial first."; go.disabled=false; return; }
+    { const al=allowedFor(m,await B.listBy("regs",me.uid)); if(!al.ok){ err.textContent=al.why==="only"?"This mock is for students of "+(al.ids||[]).map(tutName).join(", ")+". Register for one of them first.":"This mock opens once your tutorial payment is approved. Register for a tutorial first."; go.disabled=false; return; } }
     const reqs=await B.listBy("mockreqs",me.uid);
     if(reqs.some(r=>r.mockId===m.id&&r.status==="requested")){ err.textContent="You already requested this mock exam. We'll approve it soon."; go.disabled=false; return; }
     const names=await unfinishedNames(); if(names.length){ closeModal(); blockedModal(names); return; }
@@ -771,6 +811,20 @@ async function submitMock(){
   }catch(e){ console.warn(e); err.textContent="We couldn't send your request. Try again."; go.disabled=false; }
 }
 
+/* request-only mocks unlocked automatically by the student's tutorial */
+async function openAutoMock(m,link){
+  try{
+    const acts=await B.listBy("mockacts",me.uid), same=acts.find(a=>a.mockId===m.id&&!a.proof);
+    if(!same){
+      const names=await unfinishedNames(); if(names.length) return blockedModal(names);
+      await B.add("mockacts",{uid:me.uid,email:me.email,studentName:studentName(),mockId:m.id,mockName:m.name,kind:"locked",via:"auto",openedAt:Date.now()});
+    }
+    modal(`<h2>${esc(m.name)}</h2><p>This mock is already unlocked for you. Open it below. When you finish, come back and upload a screenshot of your result on your dashboard. You can't start another mock until you do.</p>
+      <a class="btn red" style="width:100%;margin-bottom:10px" href="${esc(link)}" target="_blank" rel="noopener">Open mock</a>
+      <a class="btn ghost" style="width:100%" href="#dashboard" id="gDash">Go to my dashboard</a>`);
+  }catch(e){ console.warn(e); toast("We couldn't open the mock. Check your connection and try again."); }
+}
+
 /* open-link mocks */
 async function openOpenMock(mid){
   if(!me) return openAuth(()=>openOpenMock(mid));
@@ -778,7 +832,7 @@ async function openOpenMock(mid){
   const m=site.mocks.find(x=>x.id===mid); if(!m) return;
   const link=safeUrl(m.link); if(!link){ toast("This mock's link isn't ready yet. Please check back soon."); return; }
   try{
-    if(needPaid(m)&&!(await hasPaid())) return paidModal();
+    { const al=allowedFor(m,await B.listBy("regs",me.uid)); if(!al.ok) return deniedModal(m,al); }
     const acts=await B.listBy("mockacts",me.uid), same=acts.find(a=>a.mockId===m.id&&!a.proof);
     if(!same){
       const names=await unfinishedNames(); if(names.length) return blockedModal(names);
@@ -813,7 +867,7 @@ async function startQuiz(mid){
   if(!studentOnly()) return;
   const m=site.mocks.find(x=>x.id===mid); if(!m) return;
   try{
-    if(needPaid(m)&&!(await hasPaid())) return paidModal();
+    { const al=allowedFor(m,await B.listBy("regs",me.uid)); if(!al.ok) return deniedModal(m,al); }
     const subs=await B.listBy("quizsubs",me.uid);
     if(subs.some(x=>x.mockId===m.id)){ toast("You've already taken this quiz. Your result is on your dashboard."); return; }
     const names=await unfinishedNames(); if(names.length) return blockedModal(names);
@@ -892,7 +946,7 @@ async function showDash(){
     const r=m.r;
     if(m.t==="quiz"){ const sc=scoreOf(r); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Online quiz, taken ${fmtDate(r.submittedAt)}</div></div><span class="st completed">${sc?sc.c+"/"+sc.n+" ("+sc.pct+"%)":"Marked soon"}</span></div>
       <div class="acts"><button class="btn ghost sm" data-review="${esc(r.mockId)}">See my answers</button></div></div>`; }
-    if(m.t==="open"){ const mk=site.mocks.find(x=>x.id===r.mockId), lk=safeUrl(mk&&mk.link); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Open mock, opened ${fmtDate(r.openedAt)}</div></div><span class="st ${pOf("mockacts",r)?"completed":"pending"}">${pOf("mockacts",r)?"Result uploaded":"Waiting for your result"}</span></div>
+    if(m.t==="open"){ const mk=site.mocks.find(x=>x.id===r.mockId), lk=r.kind==="locked"?autoLinkFor(mk||{id:r.mockId},regs):safeUrl(mk&&mk.link); return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">${r.kind==="locked"?"Request-only mock, unlocked by your tutorial":"Open mock"}, opened ${fmtDate(r.openedAt)}</div></div><span class="st ${pOf("mockacts",r)?"completed":"pending"}">${pOf("mockacts",r)?"Result uploaded":"Waiting for your result"}</span></div>
       <div class="acts">${lk&&!pOf("mockacts",r)?`<a class="btn ghost sm" href="${esc(lk)}" target="_blank" rel="noopener">Open mock again</a>`:""}${proofBlock("mockacts",r)}</div></div>`; }
     const lk=safeUrl(r.link);
     return `<div class="rcard"><div class="top"><div><h3>${esc(r.mockName)}</h3><div class="meta">Request-only mock, requested ${fmtDate(r.createdAt)}</div></div><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
@@ -901,7 +955,7 @@ async function showDash(){
       ${r.status==="requested"?`<div class="acts"><span class="mute">We'll approve this and send your link here.</span></div>`:""}</div>`;
   };
   box.innerHTML=`<div class="wrap pad">
-    <h1 class="h1">Hello, ${esc(name.split(" ")[0])}</h1><p class="mute">${esc(me.email)} <a href="#" id="dOut">Log out</a></p>
+    <h1 class="h1">Hello, ${esc(name.split(" ")[0])}</h1><p class="mute">${esc(me.email)}${profile&&profile.regNo?` &middot; Reg. no <b style="color:var(--navy)">${esc(profile.regNo)}</b>`:""} <a href="#" id="dOut">Log out</a></p>
     <div class="stats"><div class="stat"><b>${regs.length}</b><span>Tutorials</span></div><div class="stat"><b>${regs.filter(r=>r.status==="approved"||r.status==="completed").length}</b><span>Approved</span></div><div class="stat"><b>${acts.length+subs.length+reqs.filter(r=>r.status==="approved").length}</b><span>Mocks taken</span></div></div>
 
     <div class="dsec"><div class="row"><h2>My tutorials</h2><a class="btn ghost sm" href="#tutorials">Register for another</a></div>
@@ -927,10 +981,11 @@ async function reupload(id,file){
 /* =========================================================
    ADMIN
    ========================================================= */
-let aProofs=[], aActs=[], aSubs=[], aKeys={}, aQz={}, resFilter="all", resQ="", qbSel="", qbData={};
+let aUsers=[], aCounter=null, stQ="", aProofs=[], aActs=[], aSubs=[], aKeys={}, aQz={}, resFilter="all", resQ="", qbSel="", qbData={};
 let aTab="receipts", aRegs=[], aReqs=[], rFilter="pending", rQ="", qFilter="requested";
+const LIVE_TABS=["receipts","mockreqs","results","students"];
 const CONTENT_TABS=["quiz","announce","topstudents","brand","team","tutorials","accounts","mocks","contacts","settings","design"];
-const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",results:"Results",quiz:"Quiz builder",brand:"Brand",announce:"Announcements",topstudents:"Top students",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings",design:"Fonts"};
+const TABLABEL={receipts:"Receipts",mockreqs:"Mock requests",results:"Results",students:"Students",quiz:"Quiz builder",brand:"Brand",announce:"Announcements",topstudents:"Top students",team:"Team",tutorials:"Tutorials",accounts:"Accounts",mocks:"Mock exams",contacts:"Contact",settings:"Settings",design:"Fonts"};
 
 async function showAdmin(){
   view="admin"; $("#site").style.display="none"; $("#admin").style.display="block"; window.scrollTo(0,0);
@@ -952,6 +1007,8 @@ async function loadAdminLists(){
   aActs=await grab("mockacts","Open mock activity","Publish the latest Firestore rules. ");
   aSubs=await grab("quizsubs","Quiz results","Publish the latest Firestore rules. ");
   aProofs=await grab("proofs","Result screenshots","Publish the latest Firestore rules. ");
+  aUsers=await grab("users","Students","Publish the latest Firestore rules. ");
+  try{ aCounter=await B.get("meta","counter"); }catch(e){ aCounter=null; }
   aKeys={}; aQz={};
   for(const m of site.mocks.filter(x=>kindOf(x)==="quiz")){
     try{ aKeys[m.id]=await B.get("quizkeys",m.id); }catch(e){ console.warn(e); }
@@ -966,18 +1023,18 @@ function renderAdmin(){
   renderTabs();
   const isContent=CONTENT_TABS.includes(aTab);
   $("#aSave").style.display=isContent?"block":"none";
-  $("#aPanel").innerHTML = aTab==="receipts"?receiptsPanel():aTab==="mockreqs"?mockreqsPanel():aTab==="results"?resultsPanel():aTab==="quiz"?quizPanel():contentPanel();
-  if(aTab==="receipts") drawReceiptList(); if(aTab==="mockreqs") drawMockList(); if(aTab==="results") drawResults();
+  $("#aPanel").innerHTML = aTab==="receipts"?receiptsPanel():aTab==="mockreqs"?mockreqsPanel():aTab==="results"?resultsPanel():aTab==="students"?studentsPanel():aTab==="quiz"?quizPanel():contentPanel();
+  if(aTab==="receipts") drawReceiptList(); if(aTab==="mockreqs") drawMockList(); if(aTab==="results") drawResults(); if(aTab==="students") drawStudents();
   updateMeter();
 }
 async function refreshAdmin(manual,silent){
   if(view!=="admin"||!isAdmin) return;
   const ae=document.activeElement, busy=!manual&&ae&&ae.closest&&ae.closest("#aPanel")&&/^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName);
   await loadAdminLists();
-  if(["receipts","mockreqs","results"].includes(aTab)){ if(busy) renderTabs(); else renderAdmin(); } else renderTabs();
+  if(LIVE_TABS.includes(aTab)){ if(busy) renderTabs(); else renderAdmin(); } else renderTabs();
   if(manual&&!silent) toast("Updated.");
 }
-setInterval(()=>{ if(view==="admin"&&isAdmin&&(["receipts","mockreqs","results"].includes(aTab))) refreshAdmin(false); },20000);
+setInterval(()=>{ if(view==="admin"&&isAdmin&&(LIVE_TABS.includes(aTab))) refreshAdmin(false); },20000);
 
 /* ---- receipts queue ---- */
 function receiptsPanel(){
@@ -986,6 +1043,7 @@ function receiptsPanel(){
     <input class="in" id="rSearch" placeholder="Search by name, email or tutorial" value="${esc(rQ)}"><div id="rList"></div>`;
 }
 const aLinkRows={}, aNotes={};
+const userOf=uid=>aUsers.find(u=>u.id===uid)||{};
 function glist(tid){ const v=cfg.groupLinks[tid]; if(Array.isArray(v)) return v; if(typeof v==="string"&&v) return [{label:"Group",url:v}]; return []; }
 function rowsFor(r){
   if(!aLinkRows[r.id]){
@@ -998,9 +1056,9 @@ function rowsFor(r){
 }
 function drawReceiptList(){
   const q=rQ.trim().toLowerCase();
-  const list=aRegs.filter(r=>(rFilter==="all"||r.status===rFilter)&&(!q||[r.studentName,r.email,r.tutorialName,r.phone].join(" ").toLowerCase().includes(q))).sort((a,b)=>b.createdAt-a.createdAt);
+  const list=aRegs.filter(r=>(rFilter==="all"||r.status===rFilter)&&(!q||[r.studentName,r.email,r.tutorialName,r.phone,userOf(r.uid).regNo].join(" ").toLowerCase().includes(q))).sort((a,b)=>b.createdAt-a.createdAt);
   $("#rList").innerHTML=list.length?list.map(r=>`<div class="item"><div class="hd"><b>${esc(r.studentName)}</b><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
-      <div class="arow"><div><div>${esc(r.email)}</div><div>${esc(r.phone)}</div><div style="margin-top:6px"><b>${esc(r.tutorialName)}</b> ${money(r.price)?"- "+money(r.price):""}</div><div class="hint">Sent ${fmtDate(r.createdAt)}</div>${r.ref?`<div class="hint">Payment note: ${esc(r.ref)}</div>`:""}</div>
+      <div class="arow"><div><div>${esc(r.email)}</div><div>${esc(r.phone)}</div>${userOf(r.uid).regNo?`<div>Reg. no: <b>${esc(userOf(r.uid).regNo)}</b></div>`:""}<div style="margin-top:6px"><b>${esc(r.tutorialName)}</b> ${money(r.price)?"- "+money(r.price):""}</div><div class="hint">Sent ${fmtDate(r.createdAt)}</div>${r.ref?`<div class="hint">Payment note: ${esc(r.ref)}</div>`:""}</div>
       ${safeImg(r.receipt)?`<img class="rthumb zoom" src="${esc(r.receipt)}" alt="Receipt (tap to enlarge)">`:""}</div>
       <label class="f">Group links for this student</label>
       ${rowsFor(r).map((g,j)=>`<div class="orow"><input class="in" list="gllabels" style="max-width:150px" data-rl="${esc(r.id)}:${j}:label" value="${esc(g.label)}" placeholder="WhatsApp group"><input class="in" data-rl="${esc(r.id)}:${j}:url" value="${esc(g.url)}" placeholder="https://..."><button class="btn danger sm" data-rldel="${esc(r.id)}:${j}">Remove</button></div>`).join("")}
@@ -1015,14 +1073,14 @@ function drawReceiptList(){
 async function regAction(act,id){
   const r=aRegs.find(x=>x.id===id); if(!r) return;
   const rows=rowsFor(r).map(x=>({label:(x.label||"").trim(),url:(x.url||"").trim()})).filter(x=>x.url);
-  const note=($("#nt-"+id)||{}).value||"";
+  const note=(document.getElementById("nt-"+id)||{}).value||"";
   const patch={updatedAt:Date.now(),note};
   if(act==="delete"){ if(!confirm("Delete this registration permanently?")) return; await B.del("regs",id); }
   else{
     if(act==="approve"||act==="update"){
       if(act==="approve"&&!rows.length&&!confirm("No group link added. Approve anyway? The student will see that the links are coming soon.")) return;
-      patch.groupLinks=rows; patch.groupLink=rows[0]?rows[0].url:""; if(act==="approve") patch.status="approved"; }
-    if(act==="reject"){ if(!note&&!confirm("Reject without a message? A short reason helps the student.")) return; patch.status="rejected"; patch.groupLinks=[]; patch.groupLink=""; }
+      patch.groupLinks=rows; patch.groupLink=rows[0]?rows[0].url:""; patch.mockAccess=mockAccessFor(r.tutorialId); if(act==="approve") patch.status="approved"; }
+    if(act==="reject"){ if(!note&&!confirm("Reject without a message? A short reason helps the student.")) return; patch.status="rejected"; patch.groupLinks=[]; patch.groupLink=""; patch.mockAccess=[]; }
     if(act==="complete") patch.status="completed";
     await B.upd("regs",id,patch);
   }
@@ -1041,7 +1099,7 @@ function drawMockList(){
   $("#qList").innerHTML=list.length?list.map(r=>{
     const link=r.link||cfg.mockLinks[r.mockId]||"";
     return `<div class="item"><div class="hd"><b>${esc(r.studentName)}</b><span class="st ${esc(r.status)}">${STATUS[r.status]||esc(r.status)}</span></div>
-      <div>${esc(r.email)}</div><div style="margin-top:6px"><b>${esc(r.mockName)}</b></div><div class="hint">Requested ${fmtDate(r.createdAt)}</div>
+      <div>${esc(r.email)}${userOf(r.uid).regNo?` &middot; Reg. no <b>${esc(userOf(r.uid).regNo)}</b>`:""}</div><div style="margin-top:6px"><b>${esc(r.mockName)}</b></div><div class="hint">Requested ${fmtDate(r.createdAt)}</div>
       <label class="f">Mock exam link for this student</label><input class="in" id="qk-${esc(r.id)}" value="${esc(link)}" placeholder="https://...">
       <label class="f">Message to the student (optional)</label><input class="in" id="qn-${esc(r.id)}" value="${esc(r.note||"")}">
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
@@ -1050,7 +1108,7 @@ function drawMockList(){
         <button class="btn danger sm" data-qa="delete" data-id="${esc(r.id)}">Delete</button></div></div>`; }).join(""):`<div class="empty" style="margin-top:12px">Nothing here.</div>`;
 }
 async function mockAction(act,id){
-  const link=($("#qk-"+id)||{}).value||"", note=($("#qn-"+id)||{}).value||"";
+  const link=(document.getElementById("qk-"+id)||{}).value||"", note=(document.getElementById("qn-"+id)||{}).value||"";
   if(act==="delete"){ if(!confirm("Delete this request permanently?")) return; await B.del("mockreqs",id); }
   else{
     const patch={updatedAt:Date.now(),note};
@@ -1069,10 +1127,10 @@ function resultRows(){
   aSubs.forEach(x=>{
     const key=(aKeys[x.mockId]||{}).answers||[], total=key.length||x.count||(x.answers||[]).length;
     const c=key.length?(x.answers||[]).filter((a,i)=>a===key[i]).length:null, pct=c==null||!total?null:Math.round(c/total*100);
-    rows.push({kind:"quiz",coll:"quizsubs",id:x.id,name:x.studentName,email:x.email,mock:x.mockName,ts:x.submittedAt,pct,perf:c==null?"Answer key not set":`${c}/${total} (${pct}%)`});
+    rows.push({kind:"quiz",coll:"quizsubs",uid:x.uid,id:x.id,name:x.studentName,email:x.email,mock:x.mockName,ts:x.submittedAt,pct,perf:c==null?"Answer key not set":`${c}/${total} (${pct}%)`});
   });
-  aActs.forEach(a=>rows.push({kind:"open",coll:"mockacts",id:a.id,name:a.studentName,email:a.email,mock:a.mockName,ts:a.openedAt,proof:pf("mockacts",a).proof,scoreText:pf("mockacts",a).scoreText}));
-  aReqs.filter(r=>r.status==="approved").forEach(r=>rows.push({kind:"locked",coll:"mockreqs",id:r.id,name:r.studentName,email:r.email,mock:r.mockName,ts:r.updatedAt||r.createdAt,proof:pf("mockreqs",r).proof,scoreText:pf("mockreqs",r).scoreText}));
+  aActs.forEach(a=>rows.push({kind:a.kind==="locked"?"locked":"open",coll:"mockacts",uid:a.uid,id:a.id,name:a.studentName,email:a.email,mock:a.mockName,ts:a.openedAt,proof:pf("mockacts",a).proof,scoreText:pf("mockacts",a).scoreText}));
+  aReqs.filter(r=>r.status==="approved").forEach(r=>rows.push({kind:"locked",coll:"mockreqs",uid:r.uid,id:r.id,name:r.studentName,email:r.email,mock:r.mockName,ts:r.updatedAt||r.createdAt,proof:pf("mockreqs",r).proof,scoreText:pf("mockreqs",r).scoreText}));
   return rows.sort((a,b)=>(b.ts||0)-(a.ts||0));
 }
 function resultsPanel(){
@@ -1083,11 +1141,11 @@ function resultsPanel(){
 }
 function drawResults(){
   const q=resQ.trim().toLowerCase();
-  const rows=resultRows().filter(r=>(resFilter==="all"||r.kind===resFilter)&&(!q||[r.name,r.email,r.mock].join(" ").toLowerCase().includes(q)));
+  const rows=resultRows().filter(r=>(resFilter==="all"||r.kind===resFilter)&&(!q||[r.name,r.email,r.mock,userOf(r.uid).regNo].join(" ").toLowerCase().includes(q)));
   const qz=rows.filter(r=>r.kind==="quiz"&&r.pct!=null), avg=qz.length?Math.round(qz.reduce((a,r)=>a+r.pct,0)/qz.length):null;
   $("#resStats").textContent=`${rows.length} result${rows.length===1?"":"s"}`+(avg!=null?`, quiz average ${avg}%`:"");
   $("#resList").innerHTML=rows.length?rows.map(r=>`<div class="item"><div class="hd"><b>${esc(r.name)}</b><span class="st ${r.kind==="quiz"?"completed":"pending"}">${KIND_LABEL[r.kind]}</span></div>
-    <div>${esc(r.email)}</div><div style="margin-top:6px"><b>${esc(r.mock)}</b></div><div class="hint">${fmtDate(r.ts)}</div>
+    <div>${esc(r.email)}${userOf(r.uid).regNo?` &middot; Reg. no <b>${esc(userOf(r.uid).regNo)}</b>`:""}</div><div style="margin-top:6px"><b>${esc(r.mock)}</b></div><div class="hint">${fmtDate(r.ts)}</div>
     <div class="arow" style="margin-top:10px;align-items:center"><div>${r.kind==="quiz"?`<div class="price" style="font-size:28px">${esc(r.perf)}</div>`:(r.proof?`Score typed by the student: <b>${esc(r.scoreText||"not given")}</b>`:`<span class="st requested">Waiting for screenshot</span>`)}</div>
     ${safeImg(r.proof)?`<img class="rthumb zoom" src="${esc(r.proof)}" alt="Result screenshot (tap to enlarge)">`:""}</div>
     <div style="margin-top:10px"><button class="btn danger sm" data-rdel="${r.coll}:${esc(r.id)}">${r.kind==="quiz"?"Delete and allow retake":"Delete"}</button></div></div>`).join(""):`<div class="empty" style="margin-top:12px">Nothing here yet.</div>`;
@@ -1144,6 +1202,70 @@ function quizPanel(){
     ${q.options.map((o,j)=>`<div class="orow"><input type="radio" name="qc${i}" data-qc="${i}:${j}"${q.correct===j?" checked":""} aria-label="Correct answer"><input class="in" data-qo="${i}:${j}" value="${esc(o)}" placeholder="Option ${String.fromCharCode(65+j)}"><button class="btn danger sm" data-odel="${i}:${j}">Remove</button></div>`).join("")}
     <button class="btn ghost sm" data-oadd="${i}">Add option</button></div>`).join("")
   +`<button class="btn red" data-qadd="1">Add a question</button><p class="hint">${qd.questions.length} question${qd.questions.length===1?"":"s"}. Press Save and publish when you're done. Students can't see the answers until they submit.</p>`;
+}
+
+/* ---- tutorial-based mock access ---- */
+function mockAccessFor(tid){
+  return site.mocks.filter(m=>kindOf(m)==="locked"&&(m.autoTut||[]).includes(tid)&&(cfg.mockLinks[m.id]||"").trim()).map(m=>({mockId:m.id,link:cfg.mockLinks[m.id].trim()}));
+}
+async function syncAccess(){
+  await loadAdminLists(); let n=0;
+  for(const r of aRegs){
+    if(r.status!=="approved"&&r.status!=="completed") continue;
+    const want=mockAccessFor(r.tutorialId);
+    if(JSON.stringify(want)!==JSON.stringify(r.mockAccess||[])){ await B.upd("regs",r.id,{mockAccess:want}); n++; }
+  }
+  return n;
+}
+
+/* ---- students and registration numbers ---- */
+const numOf=rn=>parseInt(String(rn||"").replace(/\D+/g,""),10)||0;
+function studentsPanel(){
+  const missing=aUsers.filter(u=>!u.regNo).length, c=aCounter||{n:0,prefix:"ZOT"}, next=(c.prefix||"ZOT")+((c.n||0)+1);
+  return `${aErr?`<div class="err">${esc(aErr)}</div>`:""}<div style="display:flex;justify-content:flex-end"><button class="btn ghost sm" data-refresh="1">Refresh</button></div>
+    <div class="item"><b style="color:var(--navy)">Registration numbers</b>
+    <p class="hint">The next student to sign up gets <b>${esc(next)}</b>. Numbers go out in order, starting from the first student.</p>
+    <label class="f">Prefix for new numbers</label><div class="orow"><input class="in" id="pfxIn" value="${esc(c.prefix||"ZOT")}" style="max-width:140px"><button class="btn ghost sm" data-pfxsave="1">Save prefix</button></div>
+    <p class="hint">Changing the prefix only affects new numbers. Existing numbers stay as they are.</p>
+    ${missing?`<p class="hint" style="color:var(--red2)"><b>${missing}</b> student${missing>1?"s":""} signed up before numbers existed and ${missing>1?"have":"has"} none yet.</p><button class="btn red sm" data-num="1">Give them numbers (earliest sign-up first)</button>`:`<p class="hint">Every student has a number.</p>`}</div>
+    <input class="in" id="stSq" placeholder="Search by name, number, email or phone" value="${esc(stQ)}"><div class="hint" id="stCount" style="margin-top:10px"></div><div id="stList"></div>`;
+}
+function drawStudents(){
+  const q=stQ.trim().toLowerCase();
+  const list=aUsers.filter(u=>!q||[u.name,u.email,u.phone,u.regNo].join(" ").toLowerCase().includes(q)).sort((a,b)=>(numOf(a.regNo)||1e12)-(numOf(b.regNo)||1e12)||(a.createdAt||0)-(b.createdAt||0));
+  $("#stCount").textContent=`${list.length} student${list.length===1?"":"s"}`;
+  $("#stList").innerHTML=list.length?list.map(u=>{
+    const tuts=aRegs.filter(r=>r.uid===u.id&&(r.status==="approved"||r.status==="completed")).map(r=>r.tutorialName);
+    const mocks=aActs.filter(a=>a.uid===u.id).length+aSubs.filter(x=>x.uid===u.id).length+aReqs.filter(r=>r.uid===u.id&&r.status==="approved").length;
+    return `<div class="item"><div class="hd"><b>${esc(u.name||"(no name)")}</b></div>
+      <div>${esc(u.email||"")}</div><div>${esc(u.phone||"")}</div>
+      <div class="hint">Joined ${esc(fmtDate(u.createdAt)||"unknown")}. Tutorials: ${tuts.length?esc(tuts.join(", ")):"none approved yet"}. Mocks taken: ${mocks}.</div>
+      <label class="f">Registration number</label><div class="orow"><input class="in" id="rno-${esc(u.id)}" value="${esc(u.regNo||"")}" placeholder="Not assigned" style="max-width:200px"><button class="btn sm" data-rnosave="${esc(u.id)}">Save number</button></div></div>`; }).join(""):`<div class="empty" style="margin-top:12px">No students yet.</div>`;
+}
+async function saveRegNo(uid){
+  const val=(((document.getElementById("rno-"+uid)||{}).value)||"").trim();
+  if(!val){ toast("Type a registration number first."); return; }
+  const clash=aUsers.find(u=>u.id!==uid&&String(u.regNo||"").toLowerCase()===val.toLowerCase());
+  if(clash){ toast("That number already belongs to "+(clash.name||clash.email)+"."); return; }
+  if(!confirm("Change this student's registration number to "+val+"?")) return;
+  try{ await B.upd("users",uid,{regNo:val}); toast("Saved."); await loadAdminLists(); renderAdmin(); }
+  catch(e){ console.warn(e); toast("Couldn't save ("+(e.code||e.message)+")."); }
+}
+async function numberExisting(){
+  const missing=aUsers.filter(u=>!u.regNo).sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  if(!missing.length) return;
+  if(!confirm("Give numbers to "+missing.length+" student(s), earliest sign-up first?")) return;
+  const c=aCounter||{n:0,prefix:"ZOT"}; let n=c.n||0; const prefix=c.prefix||"ZOT";
+  try{ for(const u of missing){ n++; await B.upd("users",u.id,{regNo:prefix+n}); } await B.set("meta","counter",{n,prefix}); toast("Numbers assigned."); }
+  catch(e){ console.warn(e); toast("Couldn't finish ("+(e.code||e.message)+")."); }
+  await loadAdminLists(); renderAdmin();
+}
+async function savePrefix(){
+  const v=((($("#pfxIn")||{}).value)||"").trim().toUpperCase().replace(/[^A-Z0-9]/g,"");
+  if(!v){ toast("Type a prefix, for example ZOT."); return; }
+  const c=aCounter||{n:0};
+  try{ await B.set("meta","counter",{n:c.n||0,prefix:v}); toast("Prefix saved."); await loadAdminLists(); renderAdmin(); }
+  catch(e){ console.warn(e); toast("Couldn't save ("+(e.code||e.message)+")."); }
 }
 
 function upField(label,list,i,field,mode,cur,hint){
@@ -1213,7 +1335,13 @@ function contentPanel(){
       ${k==="open"?`<label class="f">Link students open</label>${inp("mocks",i,"link",it.link,"https://...")}<p class="hint">This link is not private. Anyone who has it can open the mock.</p>`:""}
       ${k==="locked"?`<label class="f">Default link (private, optional)</label><input class="in" data-cfg="mockLinks" data-ck="${esc(it.id)}" value="${esc(cfg.mockLinks[it.id]||"")}" placeholder="Prefills the link when you approve a request">`:""}
       ${k==="quiz"?`<p class="hint">Save this mock first, then add its questions in the Quiz builder tab.</p><button class="btn ghost sm" data-qb="${esc(it.id)}">Edit questions</button>`:""}
-      <label class="f">Who can take it</label><select class="in" data-l="mocks" data-i="${i}" data-k="paidOnly"><option value="false"${!needPaid(it)?" selected":""}>Any signed-in student</option><option value="true"${needPaid(it)?" selected":""}>Only students whose tutorial payment is approved</option></select>`; },{id:"m"+uid8(),name:"",description:"",kind:"open",link:"",paidOnly:false}),
+      ${(()=>{ const w=whoOf(it), chk=f=>S.tutorials.map(t=>`<label class="chk"><input type="checkbox" data-tck="mocks:${i}:${f}:${esc(t.id)}"${(it[f]||[]).includes(t.id)?" checked":""}> ${esc(t.name)}</label>`).join("");
+        return `<label class="f">Who can take it</label><select class="in" data-l="mocks" data-i="${i}" data-k="who">
+          <option value="any"${w==="any"?" selected":""}>Any signed-in student</option>
+          <option value="paid"${w==="paid"?" selected":""}>Only students whose tutorial payment is approved</option>
+          <option value="only"${w==="only"?" selected":""}>Only students of the tutorials I choose</option></select>
+          ${w==="only"?`<div class="chkrow">${chk("onlyTut")}</div><p class="hint">Students whose registration for one of these tutorials is approved can take it straight away, with no further approval.</p>`:""}
+          ${k==="locked"?`<label class="f">Send the link automatically, no request needed, to students of</label><div class="chkrow">${chk("autoTut")}</div><p class="hint">Needs the default link above. Once a student's payment for one of these tutorials is approved, the link is on their dashboard. Everyone else can still request it and you approve them one by one.</p>`:""}`; })()}`; },{id:"m"+uid8(),name:"",description:"",kind:"open",link:"",who:"any",onlyTut:[],autoTut:[]}),
     contacts:()=>listPanel("contacts","Contact",(it,i)=>`<label class="f">Label</label>${inp("contacts",i,"label",it.label,"Email, Telegram, Instagram...")}
       <label class="f">Link</label>${inp("contacts",i,"url",it.url,"mailto:you@mail.com or https://...")}
       <label class="f">Text shown</label>${inp("contacts",i,"text",it.text)}`,{label:"",url:"",text:""}),
@@ -1247,6 +1375,7 @@ function bindAdmin(){
     else if(d.qo!==undefined){ const [i,j]=d.qo.split(":").map(Number), qd=qbData[qbSel]; qd.questions[i].options[j]=t.value; qd.dirty=true; markDirty(); }
     else if(d.qc!==undefined){ const [i,j]=d.qc.split(":").map(Number), qd=qbData[qbSel]; qd.questions[i].correct=j; qd.dirty=true; markDirty(); }
     else if(t.id==="rSq"){ resQ=t.value; drawResults(); }
+    else if(t.id==="stSq"){ stQ=t.value; drawStudents(); }
     else if(d.fg){ site.fonts[d.fg]=t.value; previewFont(t); applyDesign(); markDirty(); }
     else if(d.fs){ site.fonts.sec[d.fs]=t.value; previewFont(t); applyDesign(); markDirty(); }
     else if(d.b){ site.brand[d.b]=t.value; markDirty(); }
@@ -1264,11 +1393,17 @@ function bindAdmin(){
     }
     if(t.dataset.l==="tutorials"&&t.dataset.k==="accountId") markDirty();
     if((t.dataset.l==="mocks"||t.dataset.l==="topItems")&&t.dataset.k==="kind") renderAdmin();
+    if(t.dataset.l==="mocks"&&t.dataset.k==="who") renderAdmin();
+    if(t.dataset.tck){ const [k,i,f,tid]=t.dataset.tck.split(":"), o=site[k][+i]; const arr=o[f]=o[f]||[], ix=arr.indexOf(tid);
+      if(t.checked&&ix<0) arr.push(tid); if(!t.checked&&ix>=0) arr.splice(ix,1); markDirty(); }
     if(t.dataset.qbsel!==undefined){ qbSel=t.value; renderAdmin(); }
   };
   root.onclick=async e=>{
     const b=e.target.closest("button"); if(!b) return; const d=b.dataset;
     if(d.refresh){ await refreshAdmin(true); }
+    else if(d.rnosave){ b.disabled=true; await saveRegNo(d.rnosave); b.disabled=false; }
+    else if(d.num){ b.disabled=true; await numberExisting(); b.disabled=false; }
+    else if(d.pfxsave){ b.disabled=true; await savePrefix(); b.disabled=false; }
     else if(d.sjadd!==undefined){ site.topItems[+d.sjadd].subjects.push({name:"",score:""}); markDirty(); renderAdmin(); }
     else if(d.sjdel){ const [i,j]=d.sjdel.split(":").map(Number); site.topItems[i].subjects.splice(j,1); markDirty(); renderAdmin(); }
     else if(d.gladd){ if(!Array.isArray(cfg.groupLinks[d.gladd])) cfg.groupLinks[d.gladd]=glist(d.gladd).map(x=>({...x})); cfg.groupLinks[d.gladd].push({label:"",url:""}); markDirty(); renderAdmin(); }
@@ -1316,7 +1451,8 @@ async function saveAll(){
       await B.set("quizkeys",id,{answers:qd.questions.map(q=>q.correct),updatedAt:Date.now()});
       qd.dirty=false;
     }
-    msg.textContent=B.mode==="demo"?"Demo mode: updated here only, not saved.":"Saved. Your site is updated.";
+    let synced=0; try{ synced=await syncAccess(); }catch(e){ console.warn(e); }
+    msg.textContent=(B.mode==="demo"?"Demo mode: updated here only, not saved.":"Saved. Your site is updated.")+(synced?` Mock access updated for ${synced} student${synced>1?"s":""}.`:"");
   }catch(e){ console.error(e); msg.textContent="Could not save: "+(e.message||"check your Firestore rules."); }
   btn.disabled=false; updateMeter();
 }
@@ -1337,6 +1473,7 @@ document.addEventListener("click",async e=>{
   if(t.id==="mGo"){ submitMock(); return; }
   if(t.id==="pGo"){ submitProof(); return; }
   if(t.id==="qSubmit"){ submitQuiz(); return; }
+  if(t.id==="wGo"){ const cb=afterAuth; afterAuth=null; closeModal(); if(cb) setTimeout(cb,60); return; }
   if(t.id==="gDash"){ closeModal(); if(location.hash==="#dashboard") setTimeout(showDash,0); return; }
   const mo2=c("[data-mopen]"); if(mo2){ openOpenMock(mo2.dataset.mopen); return; }
   const qzb=c("[data-quiz]"); if(qzb){ startQuiz(qzb.dataset.quiz); return; }
@@ -1347,7 +1484,7 @@ document.addEventListener("click",async e=>{
   const mk=c("[data-mock]"); if(mk){ openMock(mk.dataset.mock); return; }
   const cp=c("[data-copy]"); if(cp){ try{ await navigator.clipboard.writeText(cp.dataset.copy); toast("Account number copied."); }catch{ toast("Copy it manually: "+cp.dataset.copy); } return; }
   const mo=c(".mopt"); if(mo){ const inp=mo.querySelector("input"); if(inp){ mockPick=inp.value; document.querySelectorAll(".mopt").forEach(x=>x.classList.toggle("on",x===mo)); } }
-  const tb=c("#aTabs button"); if(tb){ aTab=tb.dataset.t; if(["receipts","mockreqs","results"].includes(aTab)) await refreshAdmin(true,true); else renderAdmin(); return; }
+  const tb=c("#aTabs button"); if(tb){ aTab=tb.dataset.t; if(LIVE_TABS.includes(aTab)) await refreshAdmin(true,true); else renderAdmin(); return; }
 });
 document.addEventListener("change",async e=>{
   const t=e.target;
@@ -1396,7 +1533,10 @@ window.addEventListener("hashchange",route);
   }catch(e){ console.warn(e); }
   B.onAuth(async u=>{
     me=u; isAdmin=!!(u&&ADMIN_EMAILS.map(x=>x.toLowerCase()).includes((u.email||"").toLowerCase())); profile=null;
-    if(me){ try{ profile=await B.getProfile(me.uid); }catch{} if(profile&&profile.name) me.name=profile.name; }
+    if(me){ try{ profile=await B.getProfile(me.uid); }catch{} if(profile&&profile.name) me.name=profile.name;
+      if(!isAdmin&&!signingUp&&(!profile||!profile.regNo)){
+        try{ const rn=await B.claimRegNo(me.uid,profile?{}:{name:me.name||"",phone:"",email:me.email,createdAt:Date.now()}); profile=await B.getProfile(me.uid); toast("Your registration number is "+rn+". You'll find it on your dashboard."); }catch(e){ console.warn(e); }
+      } }
     updateAuthBtn();
     if(view==="dash") showDash(); else if(view==="admin") showAdmin();
   });
